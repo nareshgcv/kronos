@@ -41,6 +41,71 @@ Kronos bypasses autoregressive token generation entirely, mapping static enum ch
 └───────────────────────────────────┬───────────────────────────────────
 
 ─┘
+---
+
+## 🚀 Key Features
+
+* **Sub-10ms Latency SLA:** Eliminates token-by-token generation overhead for ultra-fast decision loops.
+* **0% Structural Hallucination:** Mathematically constrained to return only choices defined in your input schema.
+* **Dual Runtime Modes:**
+  * **Daemon Mode:** High-performance REST API (Axum) + Zero-Copy Unix Domain Socket (`/tmp/kronos.sock`).
+  * **Embedded Library Mode:** Direct in-process crate integration with zero inter-process communication (IPC) overhead.
+* **Multi-Platform Hardware Acceleration:** Native Apple Metal (macOS) and NVIDIA CUDA (Linux/Windows) via Hugging Face `candle-core`.
+
+  ---
+
+## 🛠️ Installation & Setup
+
+### Prerequisites
+
+* [Rust Toolchain](https://rustup.rs/) (edition 2021+)
+* **For macOS Acceleration:** Apple Silicon Mac with Xcode command-line tools.
+* **For NVIDIA Acceleration:** CUDA Toolkit 11.8+ or 12.x installed.
+
+### 1. Download Model Weights
+
+Place fine-tuned model weights (e.g., Qwen2.5-1.5B or Llama-3.2-1B in `.safetensors` format) into the `./model_weights` directory:
+
+```bash
+mkdir -p model_weights
+# Place config.json, tokenizer.json, and model.safetensors 
+
+2. Build & Run Kronos Server
+For macOS (Apple Metal):
+
+cargo run --release --features metal
+For NVIDIA GPUs (CUDA):
+
+cargo run --release --features cuda
+
+💻 Usage Examples
+1. Embedded Crate Usage (In-Memory Rust Crate)
+Add kronos- to your Cargo.toml:
+
+use kronos_core::EmbeddedKronos;
+
+fn main() -> anyhow::Result<()> {
+    // Initialize Kronos in-process
+    let kronos = EmbeddedKronos::new("./model_weights")?;
+
+    let prompt = "SYS_STATE: PLAYER_HP=12% AMMO=5% ENEMIES=8 | ACTION_DECISION:";
+    let choices = vec![
+        "SPAWN_HEALTH".to_string(),
+        "SPAWN_AMMO".to_string(),
+        "HOLD".to_string()
+    ];
+
+
+
+
+    // Synchronous decision in < 8ms
+    let decision = kronos.evaluate(prompt, &choices, 0.8)?;
+
+    println!("Selected Action: {}", decision.selected_choice);
+    println!("Confidence     : {:.2}%", decision.confidence * 100.0);
+
+    Ok(())
+}
 
 
 
