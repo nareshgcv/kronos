@@ -109,3 +109,20 @@ fn main() -> anyhow::Result<()> {
 
 
 
+
+2. Sub-2ms Unix Domain Socket IPC (Local Client)
+For game engines (C++/Unreal/Unity) communicating with the Kronos daemon locally over /tmp/kronos.sock:
+
+Request Payload:
+
+{
+  "prompt": "SYS_STATE: PLAYER_HP=12% AMMO=5% ENEMIES=8 | ACTION_DECISION:",
+  "choices": ["SPAWN_HEALTH", "SPAWN_AMMO", "HOLD"],
+  "temperature": 0.8
+}
+
+Response Payload:
+
+
+
+
