@@ -123,5 +123,14 @@ Request Payload:
 Response Payload:
 
 
+{
+  "selected_choice": "SPAWN_HEALTH",
+  "confidence": 0.9241,
+  "latency_ms": 5.42
+}
 
 
+🧪 Testing & SLA Benchmarking
+To run the integration benchmark suite against a running Kronos instance:
+
+cargo run --test ipc_test
