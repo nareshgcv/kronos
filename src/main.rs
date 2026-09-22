@@ -1,40 +1,55 @@
-use anyhow::{Context, Result};
-use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_transformers::models::qwen2::{Config as QwenConfig, ModelForCausalLM as QwenModel};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+mod config;
+mod engine;
+mod server;
+mod tokenizer;
+
+use anyhow::Result;
+use config::{select_best_device, KronosConfig};
+use engine::candle_backend::CandleEngine;
+use server::http::{create_router, AppState};
+use server::ipc::IpcServer;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
-use tokenizers::Tokenizer;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DecisionRequest {
-    pub context_prompt: String,
-    pub candidate_choices: Vec<String>,
-    #[serde(default = "default_temperature")]
-    pub temperature: f32,
-}
+#[tokio::main]
+async fn main() -> Result<()> {
+    println!("==================================================");
+    println!("     KRONOS CORE :: System 1 Engine Initializing   ");
+    println!("==================================================");
 
-fn default_temperature() -> f32 {
-    1.0
-}
+    let config = KronosConfig::default();
+    let device = select_best_device();
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DecisionResponse {
-    pub selected_choice: String,
-    pub confidence: f32,
-    pub probabilities: HashMap<String, f32>,
-    pub execution_time_ms: f64,
-}
+    println!("[Device] Selected Hardware Acceleration: {:?}", device);
 
-pub struct KronosEngine {
-    model: QwenModel,
-    tokenizer: Tokenizer,
-    device: Device,
-}
+    // 1. Load model weights into memory
+    let engine = CandleEngine::load(&config.model_dir, device)?;
+    let shared_engine = Arc::new(engine);
 
-impl KronosEngine {
-    /// Loads the model weights and tokenizer onto GPU/CPU
+    // 2. Spawn Sub-2ms Unix IPC Socket Listener
+    if config.use_ipc {
+        let ipc_server = IpcServer::new(config.ipc_socket_path.clone(), Arc::clone(&shared_engine));
+        tokio::spawn(async move {
+            if let Err(e) = ipc_server.run().await {
+                eprintln!("[IPC Fatal] Server crashed: {}", e);
+            }
+        });
+    }
+
+    // 3. Start HTTP/REST API Server (Axum)
+    let state = Arc::new(AppState {
+        engine: (*shared_engine).clone_engine(),
+    });
+
+    let app = create_router(state);
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.server_port));
+
+    println!("[HTTP] REST API listening on http://{}", addr);
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}    /// Loads the model weights and tokenizer onto GPU/CPU
     pub fn new(model_dir: &str, device: Device) -> Result<Self> {
         let config_path = format!("{}/config.json", model_dir);
         let tokenizer_path = format!("{}/tokenizer.json", model_dir);
