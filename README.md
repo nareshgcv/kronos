@@ -1,4 +1,4 @@
-# ⚡ Kronos Core (`kronos-core`)
+# ⚡ Kronos (`kronos`)
 
 > **Sub-10ms System 1 Decision Engine for Bare-Metal & Real-Time AI Systems**
 
@@ -16,3 +16,31 @@ It is engineered for real-time applications such as **60 FPS game engine loops (
 ## 🏗️ Architecture Overview
 
 Kronos bypasses autoregressive token generation entirely, mapping static enum choices directly to fixed token IDs in model vocabulary.# kronos
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Telemetry State / Prompt                        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│             Candle Engine :: Single Prefill Pass (4–8ms)                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│        Schema Mapper :: Extract Choice Logits (Fixed Token IDs)       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│         Logit Extractor :: Temperature-Scaled Softmax Vector          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│             Structured Choice + Confidence Score Output                │
+└───────────────────────────────────┬───────────────────────────────────
+
+─┘
+
+
+
