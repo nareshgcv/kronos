@@ -1,5 +1,0 @@
-
-<ElicitationsGroup message="What would you like to build next for Kronos?">
-  <Elicitation label="Create Python contrastive fine-tuning script" query="Write a complete Python script using Hugging Face/Unsloth to fine-tune Qwen/Llama with contrastive pair loss for Kronos."/>
-  <Elicitation label="Generate C++ SDK header for Unreal Engine" query="Write the C++ client SDK header to integrate Kronos Unix Shared Memory sockets directly inside Unreal Engine or C++ game codebases."/>
-</ElicitationsGroup>
