@@ -1,4 +1,4 @@
-hu# ⚡ Kronos (`kronos`)
+# ⚡ Kronos (`kronos`)
 
 > **Sub-10ms System 1 Decision Engine for Bare-Metal & Real-Time AI Systems**
 
@@ -7,19 +7,42 @@ hu# ⚡ Kronos (`kronos`)
 [![Hardware Acceleration](https://img.shields.io/badge/Acceleration-CUDA_%7C_Metal-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Kronos Core** is a ultra-low-latency, zero-token, non-generative AI inference engine built in pure Rust. Unlike generative Large Language Models that decode output token-by-token (taking 200ms–2000ms), Kronos executes a **single prefill forward pass**, extracts target choice logits, and applies a temperature-scaled Softmax over a pre-defined schema in **4ms to 12ms**.
+ # ⚡ Kronos Core
 
-It is engineered for real-time applications such as **60 FPS game engine loops (Unreal/Unity/Godot)**, **sub-10ms High-Frequency Trading (HFT) risk filters**, and **local agent security firewalls**.
+**Kronos Core** is an ultra-low-latency, zero-generation **System 1 decision engine** built in pure Rust and powered by [`candle`](https://github.com/huggingface/candle). 
+
+Instead of waiting for autoregressive text generation (token-by-token parsing taking 200ms–2000ms), Kronos executes a single prefill forward pass over prompt context, extracts target choice logits directly, and applies a temperature-scaled Softmax over a pre-defined schema in **1ms to 5ms**.
 
 ---
 
+## ⚡ Key Features
 
+* **Zero-Generation System 1 Engine Core:**
+  * **Single Prefill Forward Pass:** Eliminates autoregressive token decoding loops, delivering decisions in 1ms to 5ms.
+  * **Deterministic Single-Token Resolution:** Maps candidate choices directly to target vocabulary token IDs, guaranteeing $100\%$ schema compliance without text parsing risk.
+  * **Numerically Stable Softmax:** Computes temperature-scaled probabilities using max-logit subtraction ($e^{x - \text{max\_x}}$) to prevent floating-point underflow or overflow.
 
-# 🏗️ Architecture Overview
+* **Dynamic Model Architecture & Hardware Dispatch:**
+  * **Model Agnosticism:** Dynamic architecture dispatch inspecting `config.json` to support **Qwen2**, **Llama 3**, and **Mistral** open-weight model families.
+  * **Multi-Shard Weight Support:** Automatically discovers and memory-maps single or multi-shard `.safetensors` weight files (`VarBuilder::from_mmaped_safetensors`).
+  * **Hardware-Aware Precision:** Deploys `BF16` precision on CUDA and Metal acceleration targets, falling back gracefully to `F32` on CPU.
 
-Kronos is an ultra-low-latency, pure-Rust intent router and guardrail engine built on top of `candle`. 
+* **Dual Network Interfaces & Concurrency:**
+  * **High-Throughput REST API (Axum):** Asynchronous HTTP server providing standard endpoints (`POST /v1/decision`, `GET /health`).
+  * **Sub-2ms Local IPC:** Unix Domain Socket server utilizing newline-delimited JSON framing (`\n`) for low-latency local sidecar integration.
+  * **Non-Blocking Execution:** Offloads heavy tensor matrix operations to dedicated worker threads (`tokio::task::spawn_blocking`), preserving Tokio runtime responsiveness.
 
-Instead of generating text token-by-token through costly autoregressive decoding, Kronos executes a single forward prefill pass, extracts logits corresponding to fixed schema choices, and applies a temperature-scaled Softmax in **4ms to 8ms**.
+* **Embedded Library API (`lib.rs`):**
+  * **`EmbeddedKronos` Interface:** Thread-safe (`Send + Sync`) struct wrapping `Arc<CandleEngine>` for direct in-process execution inside Rust binaries or C++ hosts with zero network overhead.
+
+* **Production Reliability & Operations:**
+  * **Graceful Lifecycle:** Automatic stale Unix socket cleanup and signal handling (`SIGINT`/`Ctrl+C`) during server startup and shutdown.
+  * **Zero-Panic Error Propagation:** Structured JSON error responses replace thread panics across network workers.
+  * **Sub-Millisecond Micro-Metrics:** Built-in `LatencyTimer` utility providing microsecond (`elapsed_us`) and millisecond (`elapsed_ms`) timing accuracy.
+
+---
+
+## 🏗️ Architecture & Execution Flow
 
 ```mermaid
 flowchart TD
@@ -32,17 +55,6 @@ flowchart TD
     F -->|Route Intent| G["Target Agent / Microservice"]
     F -->|Guardrail Pass| H["Primary LLM Pipeline"]
     F -->|Guardrail Fail| I["Block Request"]
-```
-
-## 🚀 Key Features
-
-* **Sub-10ms Latency SLA:** Eliminates token-by-token generation overhead for ultra-fast decision loops.
-* **0% Structural Hallucination:** Mathematically constrained to return only choices defined in your input schema.
-* **Dual Runtime Modes:**
-  * **Daemon Mode:** High-performance REST API (Axum) + Zero-Copy Unix Domain Socket (`/tmp/kronos.sock`).
-  * **Embedded Library Mode:** Direct in-process crate integration with zero inter-process communication (IPC) overhead.
-* **Multi-Platform Hardware Acceleration:** Native Apple Metal (macOS) and NVIDIA CUDA (Linux/Windows) via Hugging Face `candle-core`.
-
   ---
 
 ## 🛠️ Installation & Setup
