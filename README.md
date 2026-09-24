@@ -1,9 +1,9 @@
- # ⚡ Kronos Core
+ # ⚡ Kronos
 
-**Kronos Core** is an ultra-low-latency, zero-generation **System 1 decision engine** built in pure Rust and powered by [`candle`](https://github.com/huggingface/candle). 
+**Kronos** is an ultra-low-latency, zero-generation **System 1 decision engine** built in pure Rust and powered by [`candle`](https://github.com/huggingface/candle). 
 
 Instead of waiting for autoregressive text generation (token-by-token parsing taking 200ms–2000ms), Kronos executes a single prefill forward pass over prompt context, extracts target choice logits directly, and applies a temperature-scaled Softmax over a pre-defined schema in **1ms to 5ms**.
-
+_____
 
 ## ⚡ Key Features
 
