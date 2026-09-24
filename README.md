@@ -9,7 +9,9 @@ _____
 
 * **Zero-Generation System 1 Engine Core:**
   * **Single Prefill Forward Pass:** Eliminates autoregressive token decoding loops, delivering decisions in 1ms to 5ms.
+    
   * **Deterministic Single-Token Resolution:** Maps candidate choices directly to target vocabulary token IDs, guaranteeing $100\%$ schema compliance without text parsing risk.
+    
   * **Numerically Stable Softmax:** Computes temperature-scaled probabilities using max-logit subtraction $e^{(x - x_{\max}) / T}$ to prevent floating-point underflow or overflow.
 
 * **Dynamic Model Architecture & Hardware Dispatch:**
