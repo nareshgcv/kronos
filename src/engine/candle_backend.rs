@@ -1,12 +1,33 @@
 use anyhow::{Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::qwen2::{Config as QwenConfig, ModelForCausalLM as QwenModel};
-use std::path::Path;
+use candle_transformers::models::{
+    llama::{Config as LlamaConfig, Model as LlamaModel},
+    mistral::{Config as MistralConfig, Model as MistralModel},
+    qwen2::{Config as QwenConfig, ModelForCausalLM as QwenModel},
+};
+use std::path::{Path, PathBuf};
 use tokenizers::Tokenizer;
 
+/// Supported open-weight model architectures for Kronos
+pub enum ModelArchitecture {
+    Qwen2(QwenModel),
+    Llama(LlamaModel),
+    Mistral(MistralModel),
+}
+
+impl ModelArchitecture {
+    pub fn forward(&self, input_tensor: &Tensor, seq_len_offset: usize) -> Result<Tensor> {
+        match self {
+            Self::Qwen2(m) => Ok(m.forward(input_tensor, seq_len_offset)?),
+            Self::Llama(m) => Ok(m.forward(input_tensor, seq_len_offset)?),
+            Self::Mistral(m) => Ok(m.forward(input_tensor, seq_len_offset)?),
+        }
+    }
+}
+
 pub struct CandleEngine {
-    model: QwenModel,
+    model: ModelArchitecture,
     tokenizer: Tokenizer,
     device: Device,
 }
@@ -16,20 +37,64 @@ impl CandleEngine {
         let dir = model_dir.as_ref();
         let config_path = dir.join("config.json");
         let tokenizer_path = dir.join("tokenizer.json");
-        let weights_path = dir.join("model.safetensors");
 
         let config_str = std::fs::read_to_string(&config_path)
             .with_context(|| format!("Missing config at {:?}", config_path))?;
-        let config: QwenConfig = serde_json::from_str(&config_str)?;
 
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed loading tokenizer: {}", e))?;
 
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[weights_path], DType::BF16, &device)?
+        // 1. Automatically collect all .safetensors files (supports single-file and sharded models)
+        let mut weights_paths: Vec<PathBuf> = Vec::new();
+        if dir.join("model.safetensors").exists() {
+            weights_paths.push(dir.join("model.safetensors"));
+        } else {
+            for entry in std::fs::read_dir(dir)? {
+                let path = entry?.path();
+                if let Some(ext) = path.extension() {
+                    if ext == "safetensors" {
+                        weights_paths.push(path);
+                    }
+                }
+            }
+        }
+
+        if weights_paths.is_empty() {
+            anyhow::bail!("No .safetensors weight files found in {:?}", dir);
+        }
+
+        // Select precision according to hardware device
+        let dtype = match device {
+            Device::Cpu => DType::F32,
+            _ => DType::BF16,
         };
 
-        let model = QwenModel::new(&config, vb)?;
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(&weights_paths, dtype, &device)?
+        };
+
+        // 2. Auto-detect model architecture from config.json (`architectures` or `model_type`)
+        let config_json: serde_json::Value = serde_json::from_str(&config_str)?;
+        let model_type = config_json
+            .get("model_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("qwen2");
+
+        let model = match model_type {
+            "qwen2" => {
+                let config: QwenConfig = serde_json::from_str(&config_str)?;
+                ModelArchitecture::Qwen2(QwenModel::new(&config, vb)?)
+            }
+            "llama" => {
+                let config: LlamaConfig = serde_json::from_str(&config_str)?;
+                ModelArchitecture::Llama(LlamaModel::new(&config, vb)?)
+            }
+            "mistral" => {
+                let config: MistralConfig = serde_json::from_str(&config_str)?;
+                ModelArchitecture::Mistral(MistralModel::new(&config, vb)?)
+            }
+            other => anyhow::bail!("Unsupported model architecture: '{}'", other),
+        };
 
         Ok(Self {
             model,
@@ -55,7 +120,7 @@ impl CandleEngine {
         // Tensor shape: [1, seq_len]
         let input_tensor = Tensor::new(input_ids, &self.device)?.unsqueeze(0)?;
 
-        // Single forward pass execution (No decoding loop)
+        // Execute single forward pass using dynamic model architecture
         let logits = self.model.forward(&input_tensor, 0)?;
 
         // Extract last position logits: [1, seq_len, vocab_size] -> [vocab_size]
@@ -68,4 +133,4 @@ impl CandleEngine {
     pub fn tokenizer(&self) -> &Tokenizer {
         &self.tokenizer
     }
-  }
+}
