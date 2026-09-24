@@ -13,7 +13,6 @@ It is engineered for real-time applications such as **60 FPS game engine loops (
 
 ---
 
-## 🏗️ Architecture Overview
 
 # 🏗️ Architecture Overview
 
@@ -91,12 +90,17 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-______________________________________
+
+```
 
 2. Sub-2ms Unix Domain Socket IPC (Local Client)
 For game engines (C++/Unreal/Unity) communicating with the Kronos daemon locally over /tmp/kronos.sock:
 
+
+```
 Request Payload:
+
+```
 
 {
   "prompt": "SYS_STATE: PLAYER_HP=12% AMMO=5% ENEMIES=8 | ACTION_DECISION:",
@@ -104,14 +108,21 @@ Request Payload:
   "temperature": 0.8
 }
 
+
+```
+
 Response Payload:
 
+```
 
 {
   "selected_choice": "SPAWN_HEALTH",
   "confidence": 0.9241,
   "latency_ms": 5.42
 }
+
+
+```
 
 
 🧪 Testing & SLA Benchmarking
