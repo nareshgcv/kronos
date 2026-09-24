@@ -1,4 +1,4 @@
-# ⚡ Kronos (`kronos`)
+hu# ⚡ Kronos (`kronos`)
 
 > **Sub-10ms System 1 Decision Engine for Bare-Metal & Real-Time AI Systems**
 
@@ -19,12 +19,13 @@ It is engineered for real-time applications such as **60 FPS game engine loops (
 
 Kronos bypasses autoregressive token generation entirely, mapping static enum choices directly to fixed token IDs in the model vocabulary.
 
-```
+```mermaid
 flowchart TD
     A["Telemetry State / Prompt"] --> B["Candle Engine :: Single Prefill Pass (4–8ms)"]
     B --> C["Schema Mapper :: Extract Choice Logits (Fixed Token IDs)"]
     C --> D["Logit Extractor :: Temperature-Scaled Softmax Vector"]
     D --> E["Structured Choice + Confidence Score Output"]
+```
 
 ## 🚀 Key Features
 
