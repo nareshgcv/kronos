@@ -97,7 +97,6 @@ fn main() -> anyhow::Result<()> {
 For game engines (C++/Unreal/Unity) communicating with the Kronos daemon locally over /tmp/kronos.sock:
 
 
-```
 Request Payload:
 
 ```
@@ -109,7 +108,6 @@ Request Payload:
 }
 
 
-```
 
 Response Payload:
 
