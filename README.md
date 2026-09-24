@@ -90,7 +90,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-
+  ---
 ```
 
 2. Sub-2ms Unix Domain Socket IPC (Local Client)
@@ -111,7 +111,6 @@ Request Payload:
 
 Response Payload:
 
-```
 
 {
   "selected_choice": "SPAWN_HEALTH",
