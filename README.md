@@ -14,7 +14,7 @@ It is engineered for real-time applications such as **60 FPS game engine loops (
 ---
 
 
-# 🏗️ Architecture Overview
+
 # 🏗️ Architecture Overview
 
 Kronos is an ultra-low-latency, pure-Rust intent router and guardrail engine built on top of `candle`. 
