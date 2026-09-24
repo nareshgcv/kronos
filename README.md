@@ -30,7 +30,7 @@ Instead of waiting for autoregressive text generation (token-by-token parsing ta
   * **Zero-Panic Error Propagation:** Structured JSON error responses replace thread panics across network workers.
   * **Sub-Millisecond Micro-Metrics:** Built-in `LatencyTimer` utility providing microsecond (`elapsed_us`) and millisecond (`elapsed_ms`) timing accuracy.
 
----
+
 
 ## 🏗️ Architecture & Execution Flow
 
@@ -45,3 +45,11 @@ flowchart TD
     F -->|Route Intent| G["Target Agent / Microservice"]
     F -->|Guardrail Pass| H["Primary LLM Pipeline"]
     F -->|Guardrail Fail| I["Block Request"]
+
+💻 Quick Start
+1. Requirements
+Rust 1.75+
+
+A local Hugging Face model directory (containing config.json, tokenizer.json, and .safetensors weight files).
+
+2. Build the Release Gateway
