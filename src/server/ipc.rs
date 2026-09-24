@@ -3,8 +3,9 @@ use crate::engine::logit_extractor::LogitExtractor;
 use crate::tokenizer::schema_mapper::SchemaMapper;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 
 #[derive(Deserialize)]
@@ -18,7 +19,10 @@ pub struct IpcRequest {
 pub struct IpcResponse {
     pub selected_choice: String,
     pub confidence: f32,
+    pub probabilities: HashMap<String, f32>,
     pub latency_ms: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 pub struct IpcServer {
@@ -32,64 +36,113 @@ impl IpcServer {
     }
 
     pub async fn run(&self) -> Result<()> {
-        // Clean up stale sockets
+        // Clean up stale socket file before binding
         let _ = tokio::fs::remove_file(&self.socket_path).await;
 
         let listener = UnixListener::bind(&self.socket_path)?;
         println!("[IPC] Listening on Unix Socket: {}", self.socket_path);
 
         loop {
-            let (mut stream, _) = listener.accept().await?;
+            let (stream, _) = listener.accept().await?;
             let engine = Arc::clone(&self.engine);
 
             tokio::spawn(async move {
-                let mut buffer = vec![0u8; 4096];
+                let (reader, mut writer) = stream.into_split();
+                let mut buffered_reader = BufReader::new(reader);
+                let mut line = String::new();
 
-                while let Ok(bytes_read) = stream.read(&mut buffer).await {
-                    if bytes_read == 0 {
-                        break;
+                // Reads line-delimited JSON messages (\n framing) to handle variable payload sizes cleanly
+                while buffered_reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+                    let start = std::time::Instant::now();
+                    let payload_str = line.trim().to_string();
+                    line.clear();
+
+                    if payload_str.is_empty() {
+                        continue;
                     }
 
-                    let start = std::time::Instant::now();
+                    let engine = Arc::clone(&engine);
 
-                    // 1. Deserialize request packet
-                    let req: IpcRequest = match serde_json::from_slice(&buffer[..bytes_read]) {
-                        Ok(val) => val,
-                        Err(e) => {
-                            eprintln!("[IPC Error] Invalid Payload: {}", e);
-                            break;
+                    // Execute model inference on blocking thread pool
+                    let response = tokio::task::spawn_blocking(move || {
+                        // 1. Deserialize request payload
+                        let req: IpcRequest = match serde_json::from_str(&payload_str) {
+                            Ok(val) => val,
+                            Err(e) => {
+                                return IpcResponse {
+                                    selected_choice: String::new(),
+                                    confidence: 0.0,
+                                    probabilities: HashMap::new(),
+                                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                                    error: Some(format!("Invalid Payload JSON: {e}")),
+                                };
+                            }
+                        };
+
+                        // 2. Resolve choices strictly to single token IDs
+                        let resolved = match SchemaMapper::resolve_choices(
+                            engine.tokenizer(),
+                            &req.choices,
+                        ) {
+                            Ok(res) => res,
+                            Err(e) => {
+                                return IpcResponse {
+                                    selected_choice: String::new(),
+                                    confidence: 0.0,
+                                    probabilities: HashMap::new(),
+                                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                                    error: Some(format!("Schema Violation: {e}")),
+                                };
+                            }
+                        };
+
+                        // 3. Run single forward prefill pass
+                        let (logits, _) = match engine.forward_prefill_logits(&req.prompt) {
+                            Ok(res) => res,
+                            Err(e) => {
+                                return IpcResponse {
+                                    selected_choice: String::new(),
+                                    confidence: 0.0,
+                                    probabilities: HashMap::new(),
+                                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                                    error: Some(format!("Inference Error: {e}")),
+                                };
+                            }
+                        };
+
+                        // 4. Extract Softmax probability vector
+                        let output = LogitExtractor::compute_probabilities(
+                            &logits,
+                            &resolved,
+                            req.temperature.unwrap_or(1.0),
+                        );
+
+                        IpcResponse {
+                            selected_choice: output.selected_choice,
+                            confidence: output.confidence,
+                            probabilities: output.probabilities,
+                            latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                            error: None,
                         }
-                    };
+                    })
+                    .await
+                    .unwrap_or_else(|e| IpcResponse {
+                        selected_choice: String::new(),
+                        confidence: 0.0,
+                        probabilities: HashMap::new(),
+                        latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                        error: Some(format!("Worker Task Error: {e}")),
+                    });
 
-                    // 2. Resolve target tokens & execute prefill pass
-                    let resolved = SchemaMapper::resolve_choices(engine.tokenizer(), &req.choices)
-                        .expect("Choice schema resolution failed");
+                    // Write JSON response followed by newline character delimiter
+                    let mut response_bytes = serde_json::to_vec(&response).unwrap();
+                    response_bytes.push(b'\n');
 
-                    let (logits, _) = engine
-                        .forward_prefill_logits(&req.prompt)
-                        .expect("Inference execution failed");
-
-                    // 3. Extract probabilities
-                    let output = LogitExtractor::compute_probabilities(
-                        &logits,
-                        &resolved,
-                        req.temperature.unwrap_or(1.0),
-                    );
-
-                    let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-                    let res = IpcResponse {
-                        selected_choice: output.selected_choice,
-                        confidence: output.confidence,
-                        latency_ms,
-                    };
-
-                    let response_bytes = serde_json::to_vec(&res).unwrap();
-                    if stream.write_all(&response_bytes).await.is_err() {
+                    if writer.write_all(&response_bytes).await.is_err() {
                         break;
                     }
                 }
             });
         }
     }
-              }
+                                    }
