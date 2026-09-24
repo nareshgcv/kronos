@@ -56,7 +56,7 @@ flowchart TD
     F -->|Guardrail Pass| H["Primary LLM Pipeline"]
     F -->|Guardrail Fail| I["Block Request"]
   ---
-
+```
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
