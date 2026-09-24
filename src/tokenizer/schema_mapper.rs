@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use std::collections::HashMap;
 use tokenizers::Tokenizer;
 
 #[derive(Debug, Clone)]
@@ -11,7 +10,7 @@ pub struct ResolvedChoice {
 pub struct SchemaMapper;
 
 impl SchemaMapper {
-    /// Maps a list of string choices strictly to single token IDs in the vocabulary
+    /// Maps a list of string choices strictly to single token IDs in the vocabulary.
     pub fn resolve_choices(
         tokenizer: &Tokenizer,
         choices: &[String],
@@ -19,9 +18,22 @@ impl SchemaMapper {
         let mut resolved = Vec::with_capacity(choices.len());
 
         for choice in choices {
-            let encoding = tokenizer
-                .encode(choice.as_str(), false)
-                .map_err(|e| anyhow::anyhow!("Tokenization error for choice '{}': {}", choice, e))?;
+            let choice_str = choice.as_str();
+
+            // 1. Try exact tokenization
+            let mut encoding = tokenizer
+                .encode(choice_str, false)
+                .map_err(|e| anyhow::anyhow!("Tokenization error for choice '{choice}': {e}"))?;
+
+            // 2. Fallback: Try with leading space if exact match produced != 1 token (common in BPE)
+            if encoding.get_ids().len() != 1 {
+                let leading_space_choice = format!(" {choice_str}");
+                if let Ok(space_encoding) = tokenizer.encode(leading_space_choice.as_str(), false) {
+                    if space_encoding.get_ids().len() == 1 {
+                        encoding = space_encoding;
+                    }
+                }
+            }
 
             let token_ids = encoding.get_ids();
             if token_ids.len() != 1 {
