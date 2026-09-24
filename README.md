@@ -107,7 +107,7 @@ Request Payload:
   "temperature": 0.8
 }
 
-
+```
 
 Response Payload:
 
