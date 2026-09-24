@@ -23,7 +23,6 @@ Instead of generating text token-by-token through costly autoregressive decoding
 
 ```mermaid
 flowchart TD
-flowchart TD
     A["Incoming Payload / Prompt"] --> B["Schema Mapper :: Resolve Single-Token Schema"]
     B --> C["Candle Engine :: Single Prefill Pass (1–5ms)"]
     C --> D["Logit Extractor :: Softmax Calculation"]
