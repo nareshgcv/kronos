@@ -124,9 +124,10 @@ Response Payload:
 
 🧪 Testing & SLA Benchmarking
 To run the integration benchmark suite against a running Kronos instance:
-
+```bash
 cargo run --test ipc_test
 
+```
 
 ## 📊 Performance & Benchmarks
 
