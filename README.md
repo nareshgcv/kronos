@@ -44,7 +44,7 @@ Instead of waiting for autoregressive text generation (token-by-token parsing ta
 
 ## 🏗️ Architecture & Execution Flow
 
-```` ```mermaid ````
+```` ```mermaid 
 flowchart TD
     A["Incoming Payload / Prompt"] --> B["Schema Mapper :: Resolve Single-Token Schema"]
     B --> C["Candle Engine :: Single Prefill Pass (1–5ms)"]
@@ -56,7 +56,7 @@ flowchart TD
     F -->|Guardrail Pass| H["Primary LLM Pipeline"]
     F -->|Guardrail Fail| I["Block Request"]
   ---
-
+````
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
