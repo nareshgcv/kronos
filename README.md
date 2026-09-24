@@ -13,7 +13,7 @@
 
 Instead of waiting for autoregressive text generation (token-by-token parsing taking 200ms–2000ms), Kronos executes a single prefill forward pass over prompt context, extracts target choice logits directly, and applies a temperature-scaled Softmax over a pre-defined schema in **1ms to 5ms**.
 
----
+
 
 ## ⚡ Key Features
 
