@@ -15,15 +15,23 @@ It is engineered for real-time applications such as **60 FPS game engine loops (
 
 
 # 🏗️ Architecture Overview
+# 🏗️ Architecture Overview
 
-Kronos bypasses autoregressive token generation entirely, mapping static enum choices directly to fixed token IDs in the model vocabulary.
+Kronos is an ultra-low-latency, pure-Rust intent router and guardrail engine built on top of `candle`. 
+
+Instead of generating text token-by-token through costly autoregressive decoding, Kronos executes a single forward prefill pass, extracts logits corresponding to fixed schema choices, and applies a temperature-scaled Softmax in **4ms to 8ms**.
 
 ```mermaid
 flowchart TD
-    A["Telemetry State / Prompt"] --> B["Candle Engine :: Single Prefill Pass (4–8ms)"]
-    B --> C["Schema Mapper :: Extract Choice Logits (Fixed Token IDs)"]
-    C --> D["Logit Extractor :: Temperature-Scaled Softmax Vector"]
-    D --> E["Structured Choice + Confidence Score Output"]
+    A["Incoming Payload / Prompt"] --> B["Candle Engine :: Single Prefill Pass (4–8ms)"]
+    B --> C["Schema Mapper :: Extract Choice Logits"]
+    C --> D["Logit Extractor :: Softmax Calculation"]
+    D --> E["Structured Intent & Confidence Output"]
+    
+    E --> F{"Downstream Execution"}
+    F -->|Route Intent| G["Target Agent / Microservice"]
+    F -->|Guardrail Pass| H["Primary LLM Pipeline"]
+    F -->|Guardrail Fail| I["Block Request"]
 ```
 
 ## 🚀 Key Features
