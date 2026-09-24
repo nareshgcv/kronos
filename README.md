@@ -99,7 +99,7 @@ For game engines (C++/Unreal/Unity) communicating with the Kronos daemon locally
 
 Request Payload:
 
-```
+```json
 
 {
   "prompt": "SYS_STATE: PLAYER_HP=12% AMMO=5% ENEMIES=8 | ACTION_DECISION:",
