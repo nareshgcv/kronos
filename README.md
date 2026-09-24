@@ -23,42 +23,16 @@ Instead of generating text token-by-token through costly autoregressive decoding
 
 ```mermaid
 flowchart TD
-    subgraph Interfaces [Network Interfaces]
-        HTTP["HTTP POST /v1/decision<br>(Axum REST)"]
-        IPC["Unix Domain Socket<br>(Sub-2ms IPC)"]
-    end
-
-    subgraph Kronos [Kronos Core Engine (Rust)]
-        Router["Async Event Loop (Tokio)"]
-        Worker["Blocking Worker Thread (spawn_blocking)"]
-        
-        Step1["1. Schema Mapper<br>(Strict Single-Token Resolution)"]
-        Step2["2. Candle Engine<br>(Single Prefill Pass via CUDA/Metal/CPU)"]
-        Step3["3. Logit Extractor<br>(Stable Softmax & ArgMax)"]
-    end
-
-    subgraph Actions [Client Downstream Logic]
-        Route["Route Intent -> Target Microservice"]
-        Pass["Guardrail Pass -> Primary LLM"]
-        Block["Guardrail Fail -> Block Request"]
-    end
-
-    %% Flow logic
-    HTTP --> Router
-    IPC --> Router
-    Router -->|"Prompt & Choices"| Worker
+flowchart TD
+    A["Incoming Payload / Prompt"] --> B["Schema Mapper :: Resolve Single-Token Schema"]
+    B --> C["Candle Engine :: Single Prefill Pass (1–5ms)"]
+    C --> D["Logit Extractor :: Softmax Calculation"]
+    D --> E["Structured Intent & Confidence Output"]
     
-    Worker --> Step1
-    Step1 -->|"Valid Token IDs"| Step2
-    Step2 -->|"Raw Last-Position Logits"| Step3
-    Step3 -->|"Probability Distribution"| Worker
-    
-    Worker -->|"JSON Response (1ms - 5ms)"| Router
-    Router -.->|"Client Evaluates Output"| Actions
-
-    Actions --> Route
-    Actions --> Pass
-    Actions --> Block
+    E --> F{"Downstream Execution"}
+    F -->|Route Intent| G["Target Agent / Microservice"]
+    F -->|Guardrail Pass| H["Primary LLM Pipeline"]
+    F -->|Guardrail Fail| I["Block Request"]
 ```
 
 ## 🚀 Key Features
