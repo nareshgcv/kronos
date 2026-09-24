@@ -28,6 +28,10 @@ async fn main() -> Result<()> {
 
     // 2. Spawn Sub-2ms Unix IPC Socket Listener
     if config.use_ipc {
+        if std::path::Path::new(&config.ipc_socket_path).exists() {
+            let _ = std::fs::remove_file(&config.ipc_socket_path);
+        }
+
         let ipc_server = IpcServer::new(config.ipc_socket_path.clone(), Arc::clone(&shared_engine));
         tokio::spawn(async move {
             if let Err(e) = ipc_server.run().await {
@@ -46,7 +50,17 @@ async fn main() -> Result<()> {
 
     println!("[HTTP] REST API listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to install Ctrl+C signal handler");
+    println!("\n[System] Gracefully shutting down Kronos Core...");
 }
