@@ -1,29 +1,30 @@
 # ⚡ Kronos
 
-**Kronos** is an ultra-low-latency, zero-generation **System 1 decision engine** built in pure Rust and powered by [Hugging Face Candle](https://github.com/huggingface/candle).
+**Kronos** is an ultra-low-latency, zero-generation **System 1 decision runtime** built in pure Rust and powered by [Hugging Face Candle](https://github.com/huggingface/candle).
 
-Instead of generating an answer token-by-token, Kronos performs a **single prefill forward pass**, extracts logits for a predefined set of schema choices, and converts them into confidence scores.
+Instead of generating an answer token-by-token, Kronos performs a **single prefill forward pass**, extracts logits for a predefined decision schema, and converts those logits into confidence scores.
 
-The result is a compact decision primitive for **AI routing, guardrails, agent gating, and real-time AI systems**.
+The result is a local decision primitive for **AI routing, guardrails, agent gating, tool selection, and real-time AI systems**.
 
-> **Kronos — The Sub-10ms Decision Engine for Real-Time AI**
+> **Kronos — The Decision Runtime for Real-Time AI**
 
 ---
 
 ## 🚀 Why Kronos?
 
-Modern AI applications often spend significantly more time and compute generating responses than they need to make simple decisions.
+Modern AI systems frequently invoke expensive models for decisions that do not require a generated response.
 
-Before invoking an expensive LLM or agent, many systems only need to answer questions such as:
+Before executing an LLM, agent, or tool, an application may only need to determine:
 
 * Which model should handle this request?
 * Should this request be allowed?
 * Which agent should receive it?
-* Is this request high-risk?
+* Which tool should be selected?
+* Is the request safe?
 * Should expensive inference be skipped?
 * Which execution path should be selected?
 
-Kronos is designed to make these decisions locally with minimal latency.
+Kronos is designed to make these decisions locally with minimal inference overhead.
 
 ```text
 Incoming Request
@@ -38,7 +39,7 @@ Incoming Request
 │  Low latency         │
 └──────────┬───────────┘
            │
-      Decision
+        Decision
            │
     ┌──────┼──────┐
     ▼      ▼      ▼
@@ -50,9 +51,9 @@ Incoming Request
 
 ---
 
-## ⚡ Core Idea
+# 🧠 Core Idea
 
-Traditional LLM inference generally uses autoregressive generation:
+Traditional LLM inference generally relies on autoregressive generation:
 
 ```text
 Prompt
@@ -64,7 +65,7 @@ Prefill
 Token → Token → Token → Token
   │
   ▼
-Final response
+Generated response
 ```
 
 Kronos uses a different execution path:
@@ -85,69 +86,15 @@ Temperature-Scaled Softmax
 Structured Decision
 ```
 
-There is **no autoregressive decoding loop** and no generated text that needs to be parsed back into a decision.
+There is no autoregressive decoding loop and no generated text that needs to be parsed back into a decision.
 
 ---
 
-## 🧠 How It Works
+# 🎯 Schema-Constrained Decisions
 
-Given a schema:
+Kronos evaluates a predefined set of candidate choices.
 
-```text
-["APPROVE", "REJECT", "HALT"]
-```
-
-Kronos resolves the corresponding vocabulary token IDs and performs a single model forward pass.
-
-Conceptually:
-
-```text
-Prompt
-   │
-   ▼
-Tokenizer
-   │
-   ▼
-Candle Model
-   │
-   │  Single Forward Pass
-   ▼
-Logits
-   │
-   ├── APPROVE → 4.82
-   ├── REJECT  → 1.27
-   └── HALT    → 0.63
-            │
-            ▼
-     Temperature Scaling
-            │
-            ▼
-       Probability
-            │
-            ▼
-    Structured Decision
-```
-
-The output is restricted to the predefined schema.
-
-This provides **zero invalid-choice generation** at the output layer. It does not imply that the model's semantic decision is always correct.
-
----
-
-## ✨ Key Features
-
-### ⚡ Zero-Generation Decision Engine
-
-* Single prefill forward pass
-* No autoregressive token generation
-* No generated-text parsing
-* Direct logit extraction
-* Temperature-scaled probability calculation
-* Designed for low-latency local decisions
-
-### 🎯 Schema-Constrained Decisions
-
-Define the choices your application accepts:
+For example:
 
 ```rust
 let schema = Schema::choices(&[
@@ -157,13 +104,133 @@ let schema = Schema::choices(&[
 ]);
 ```
 
-Kronos evaluates the model against those choices rather than asking it to generate arbitrary text.
+Conceptually, the model produces logits such as:
 
-### 🦀 Pure Rust
+```text
+APPROVE  →  4.82
+REJECT   →  1.27
+HALT     →  0.63
+```
 
-Built around the Rust ecosystem and [Candle](https://github.com/huggingface/candle).
+Kronos extracts the relevant logits and applies temperature-scaled Softmax:
 
-Designed for:
+```text
+APPROVE  →  0.94
+REJECT   →  0.04
+HALT     →  0.02
+```
+
+The resulting decision is selected from the predefined schema.
+
+### What this guarantees
+
+At the output layer, Kronos can guarantee that the selected decision is one of the allowed schema choices.
+
+In other words:
+
+> **Zero invalid-choice outputs.**
+
+### What this does not guarantee
+
+Schema constraints do **not** guarantee semantic correctness.
+
+If the underlying model incorrectly interprets the input, Kronos can still produce an incorrect decision with a high confidence score.
+
+For example:
+
+```text
+Correct semantic judgment:
+SAFE
+
+Model judgment:
+UNSAFE
+
+Kronos:
+UNSAFE → 0.91
+```
+
+The output is structurally valid, but the underlying model judgment can still be wrong.
+
+Therefore, **schema compliance and semantic accuracy are separate properties**.
+
+---
+
+# ⚠️ Schema & Tokenizer Considerations
+
+Kronos's lowest-latency decision path is optimized for choices that can be resolved directly to vocabulary token IDs.
+
+For example:
+
+```text
+APPROVE
+REJECT
+HALT
+SAFE
+UNSAFE
+```
+
+This works particularly well when each candidate maps cleanly to the expected token representation.
+
+However, natural language choices are not always represented by a single token.
+
+For example:
+
+```text
+"approve transaction"
+"send to security agent"
+"requires human review"
+```
+
+may be represented by multiple sub-word tokens depending on the model tokenizer.
+
+In these cases, direct single-token logit extraction is insufficient by itself.
+
+Supporting multi-token choices may require additional techniques such as:
+
+* Token alignment
+* Candidate scoring across multiple tokens
+* Prompt framing
+* Constrained decoding
+* Sequence-level probability calculations
+
+These approaches may have different latency characteristics from the core single-token path.
+
+Therefore, the strongest Kronos performance claims apply to **schema choices that can be resolved efficiently by the selected model/tokenizer**.
+
+---
+
+# ✨ Key Features
+
+## ⚡ Zero-Generation Decision Engine
+
+* Single prefill forward pass
+* No autoregressive decoding loop
+* No generated-text parsing
+* Direct candidate-logit extraction
+* Temperature-scaled probability calculation
+* Structured decision output
+
+## 🎯 Deterministic Output Space
+
+The application defines the valid decision space before inference.
+
+```text
+Schema
+  │
+  ├── APPROVE
+  ├── REJECT
+  └── HALT
+```
+
+Kronos selects from that predefined space rather than allowing arbitrary generated text.
+
+This provides **structural output constraints**, not guaranteed semantic correctness.
+
+## 🦀 Pure Rust Runtime
+
+Kronos is implemented in Rust and built around [Candle](https://github.com/huggingface/candle).
+
+The runtime is designed for:
 
 * Embedded inference
 * Low-latency services
@@ -171,7 +238,7 @@ Designed for:
 * On-premise deployments
 * Local AI infrastructure
 
-### 🧩 Multi-Architecture Model Support
+## 🧩 Multi-Architecture Model Support
 
 Kronos is designed to support multiple open-weight model architectures through dynamic model configuration.
 
@@ -183,46 +250,36 @@ Current architecture targets include:
 
 Model support depends on the corresponding Candle implementation and Kronos integration.
 
-### 💾 Multi-Shard Safetensors
+## 💾 Safetensors Support
 
-Kronos can discover and load single or multi-shard `.safetensors` model weights using Candle's memory-mapped weight loading.
+Kronos can load single or multi-shard `.safetensors` model weights using Candle's memory-mapped weight loading.
 
-### 🖥️ Hardware Acceleration
+## 🖥️ Hardware Acceleration
 
-Designed to dispatch inference across supported hardware backends:
+Kronos is designed to use supported Candle hardware backends:
 
 * CUDA
 * Metal
-* CPU fallback
+* CPU
 
-Precision and backend availability depend on the selected model and hardware.
+Actual precision and backend support depend on the selected model, device, and runtime configuration.
 
-### 🌐 Multiple Interfaces
+## 🌐 Multiple Interfaces
 
-Kronos provides several integration paths.
+### Embedded Rust API
 
-#### Embedded Rust API
-
-Use Kronos directly inside a Rust application:
+Kronos can run directly inside a Rust application:
 
 ```rust
-let engine = KronosEngine::init()?;
-
-let schema = Schema::choices(&[
-    "APPROVE",
-    "REJECT",
-    "HALT",
-]);
-
 let decision = engine.evaluate(
-    "Market volatility: high. Order size: 50,000 USD.",
+    prompt,
     &schema,
 )?;
 ```
 
 This avoids network overhead and is intended for latency-sensitive applications.
 
-#### REST API
+### REST API
 
 An Axum-based HTTP interface provides endpoints such as:
 
@@ -231,11 +288,11 @@ POST /v1/decision
 GET  /health
 ```
 
-#### Unix Domain Socket
+### Unix Domain Socket
 
 For local sidecar deployments, Kronos provides a Unix Domain Socket interface using newline-delimited JSON framing.
 
-This can be useful when the caller and Kronos run on the same machine but are implemented in different languages.
+This allows applications written in other languages to communicate with a local Kronos process without requiring a remote service.
 
 ---
 
@@ -245,7 +302,7 @@ This can be useful when the caller and Kronos run on the same machine but are im
 flowchart TD
     A["Incoming Payload / Prompt"] --> B["Schema Mapper"]
     B --> C["Candle Engine<br/>Single Prefill Pass"]
-    C --> D["Logit Extractor"]
+    C --> D["Candidate Logit Extraction"]
     D --> E["Temperature-Scaled Softmax"]
     E --> F["Structured Decision + Confidence"]
 
@@ -260,20 +317,26 @@ flowchart TD
 
 # 🔥 Where Kronos Fits
 
-Kronos is not intended to replace a full AI gateway.
+Kronos is intentionally **not a full AI gateway**.
 
-A gateway may handle:
+A gateway typically handles concerns such as:
 
 * Provider integrations
 * API keys
-* Retries
+* Provider failover
+* Rate limiting
 * Load balancing
-* Observability
-* Budgets
 * Authentication
+* Budgets
+* Billing
+* Observability
 * Request management
 
-Kronos focuses on the **decision layer underneath or beside those systems**.
+Kronos focuses on a narrower problem:
+
+> **Making a local semantic decision before expensive AI execution.**
+
+It can therefore operate underneath or alongside an AI gateway.
 
 ```text
                 AI APPLICATION
@@ -282,8 +345,8 @@ Kronos focuses on the **decision layer underneath or beside those systems**.
               ┌───────────────┐
               │    KRONOS     │
               │               │
-              │ 1–5ms target  │
               │ Local decision│
+              │ Runtime       │
               └───────┬───────┘
                       │
               ┌───────┼────────┐
@@ -298,7 +361,51 @@ Kronos focuses on the **decision layer underneath or beside those systems**.
       LLM   Agent      Tools
 ```
 
-This makes Kronos suitable as a **decision primitive** inside larger AI infrastructure.
+Kronos can therefore complement systems such as LLM gateways rather than attempting to replace their infrastructure responsibilities.
+
+---
+
+# 🚫 What Kronos Is Not
+
+## Not an AI Gateway
+
+Kronos does not attempt to provide:
+
+* Provider API-key management
+* Provider failover
+* Billing
+* Rate-limit management
+* Multi-provider load balancing
+* Model marketplaces
+* Gateway-level observability
+
+Those are gateway/control-plane responsibilities.
+
+## Not a General-Purpose Text Generator
+
+Kronos is designed to make constrained decisions.
+
+It is not intended to replace a general-purpose LLM for:
+
+* Long-form generation
+* Open-ended conversations
+* Complex reasoning
+* Code generation
+* Document generation
+* Creative writing
+
+The expected output is a structured decision such as:
+
+```text
+ALLOW
+BLOCK
+ROUTE_A
+ROUTE_B
+SAFE
+UNSAFE
+SIMPLE
+COMPLEX
+```
 
 ---
 
@@ -345,7 +452,7 @@ Agent
 
 ## AI Guardrails
 
-Run an inexpensive local decision before expensive generation.
+Run a local decision before expensive generation.
 
 ```text
 Request
@@ -355,14 +462,32 @@ Kronos Guardrail
    │
    ├── SAFE ──────► LLM
    │
-   └── UNSAFE ────► Block
+   └── UNSAFE ───► Block
+```
+
+---
+
+## Tool Selection
+
+Determine which tool or execution path should handle a request.
+
+```text
+Request
+   │
+   ▼
+ Kronos
+   │
+   ├── DATABASE
+   ├── WEB
+   ├── CALCULATOR
+   └── NO_TOOL
 ```
 
 ---
 
 ## Model Cascading
 
-Use a small decision model to determine whether a larger model is necessary.
+Determine whether a larger model is necessary.
 
 ```text
 Request
@@ -381,42 +506,27 @@ The larger objective is to **avoid unnecessary expensive inference**.
 
 ---
 
-## Edge & On-Premise AI
-
-Kronos can operate locally without requiring every decision to be sent to a remote inference service.
-
-Potential environments include:
-
-* Edge servers
-* Private infrastructure
-* Industrial systems
-* Embedded AI
-* On-premise AI platforms
-* Local agent runtimes
-
----
-
 # 📊 Latency
 
-Kronos is designed for **sub-10ms local decision inference**, with current development targeting approximately **1–5ms warm inference** under suitable hardware and workload conditions.
+Kronos is designed for low-latency local decision inference, with a current development target of approximately **1–5 ms warm inference** under suitable workloads and hardware.
+
+This should be treated as a **benchmark target**, not a universal guarantee.
 
 Actual latency depends on:
 
 * Model architecture
 * Model size
 * Input length
+* Tokenizer
 * Hardware
 * Backend
 * Memory bandwidth
 * Schema size
 * Runtime configuration
-* Synchronization behavior
+* GPU synchronization
+* Concurrency
 
-Always benchmark Kronos on your target hardware before making latency guarantees.
-
-### Recommended Benchmark Metrics
-
-Kronos benchmarks should report:
+Meaningful latency reporting should include:
 
 ```text
 p50
@@ -426,19 +536,7 @@ p99.9
 max
 ```
 
-along with:
-
-```text
-CPU / GPU
-Model
-Model precision
-Input tokens
-Schema size
-Operating system
-Backend
-Cold-start latency
-Warm latency
-```
+along with the hardware and workload used to produce the measurements.
 
 ---
 
@@ -517,7 +615,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-For production benchmarking, measure the complete path separately:
+For production benchmarking, measure the pipeline separately:
 
 ```text
 Tokenization
@@ -545,14 +643,16 @@ Decision Construction
 
 # 🧪 Accuracy Matters
 
-Latency alone does not determine whether a routing or guardrail engine is useful.
+Latency alone does not establish whether a decision engine is useful.
 
-A meaningful Kronos evaluation should measure both:
+A meaningful Kronos evaluation should measure:
 
 ```text
 Decision Quality
 +
 Decision Latency
++
+Resource Cost
 ```
 
 Recommended metrics include:
@@ -569,7 +669,9 @@ Recommended metrics include:
 * Memory usage
 * GPU utilization
 
-Most importantly, evaluate whether Kronos can **reduce expensive downstream inference while maintaining acceptable decision quality**.
+The key product question is:
+
+> **Can Kronos make sufficiently accurate semantic decisions at substantially lower latency and cost than invoking a larger downstream model?**
 
 ---
 
@@ -629,7 +731,7 @@ A typical Kronos deployment can expose three layers:
 
 # 💻 Quick Start
 
-## 1. Requirements
+## Requirements
 
 * Rust 1.75+
 * Local Hugging Face model directory
@@ -642,7 +744,7 @@ A typical Kronos deployment can expose three layers:
 
 ---
 
-## 2. Initialize the Engine
+## Initialize the Engine
 
 ```rust
 use kronos_core::KronosEngine;
@@ -652,7 +754,7 @@ let engine = KronosEngine::init()?;
 
 ---
 
-## 3. Define a Decision Schema
+## Define a Decision Schema
 
 ```rust
 use kronos_core::Schema;
@@ -666,7 +768,7 @@ let schema = Schema::choices(&[
 
 ---
 
-## 4. Evaluate
+## Evaluate
 
 ```rust
 let result = engine.evaluate(
@@ -741,15 +843,14 @@ Production deployments should still validate:
 
 # 🧭 Roadmap
 
-Potential future development areas include:
-
 * [ ] More model architectures
 * [ ] CUDA optimization
 * [ ] Metal optimization
 * [ ] CPU SIMD optimization
 * [ ] Dynamic batching
+* [ ] Multi-token candidate scoring
 * [ ] Streaming decision APIs
-* [ ] More comprehensive benchmark suite
+* [ ] Comprehensive benchmark suite
 * [ ] Accuracy evaluation datasets
 * [ ] Model routing benchmarks
 * [ ] Guardrail benchmarks
@@ -788,30 +889,37 @@ See the repository license for current licensing terms.
 
 # ⚡ The Kronos Thesis
 
-Large language models are expensive and powerful.
+Large language models are powerful, but many AI workflows do not require generation for every step.
 
-But not every AI decision requires generation.
-
-Kronos explores a simpler execution model:
+Sometimes the application only needs to decide:
 
 ```text
-        EXPENSIVE AI
-             ▲
-             │
-      Only when needed
-             │
-             │
-       ┌───────────┐
-       │   KRONOS  │
-       │           │
-       │  Decide   │
-       │  Route    │
-       │  Gate     │
-       │  Filter   │
-       └─────┬─────┘
-             │
-             ▼
-        AI SYSTEM
+Should I call the model?
+Which model should I call?
+Which agent should execute?
+Which tool should run?
+Should this request be blocked?
+```
+
+Kronos provides a local execution layer for those decisions.
+
+```text
+             EXPENSIVE AI
+                  ▲
+                  │
+           Only when needed
+                  │
+           ┌─────────────┐
+           │   KRONOS    │
+           │             │
+           │   Decide    │
+           │   Route     │
+           │   Gate      │
+           │   Filter    │
+           └──────┬──────┘
+                  │
+                  ▼
+              AI SYSTEM
 ```
 
 **Make the decision first.
