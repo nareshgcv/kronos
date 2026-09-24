@@ -40,7 +40,7 @@ Instead of waiting for autoregressive text generation (token-by-token parsing ta
   * **Zero-Panic Error Propagation:** Structured JSON error responses replace thread panics across network workers.
   * **Sub-Millisecond Micro-Metrics:** Built-in `LatencyTimer` utility providing microsecond (`elapsed_us`) and millisecond (`elapsed_ms`) timing accuracy.
 
----
+
 
 ## 🏗️ Architecture & Execution Flow
 
