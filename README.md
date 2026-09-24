@@ -7,20 +7,18 @@
 [![Hardware Acceleration](https://img.shields.io/badge/Acceleration-CUDA_%7C_Metal-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
- # ⚡ Kronos 
-
 **Kronos Core** is an ultra-low-latency, zero-generation **System 1 decision engine** built in pure Rust and powered by [`candle`](https://github.com/huggingface/candle). 
 
 Instead of waiting for autoregressive text generation (token-by-token parsing taking 200ms–2000ms), Kronos executes a single prefill forward pass over prompt context, extracts target choice logits directly, and applies a temperature-scaled Softmax over a pre-defined schema in **1ms to 5ms**.
 
-
+---
 
 ## ⚡ Key Features
 
 * **Zero-Generation System 1 Engine Core:**
   * **Single Prefill Forward Pass:** Eliminates autoregressive token decoding loops, delivering decisions in 1ms to 5ms.
-  * **Deterministic Single-Token Resolution:** Maps candidate choices directly to target vocabulary token IDs, guaranteeing $100\%$ schema compliance without text parsing risk.
-  * **Numerically Stable Softmax:** Computes temperature-scaled probabilities using max-logit subtraction $e^{(x - x_{\max}) / T}$ to prevent floating-point underflow or overflow.
+  * **Deterministic Single-Token Resolution:** Maps candidate choices directly to target vocabulary token IDs, guaranteeing 100% schema compliance without text parsing risk.
+  * **Numerically Stable Softmax:** Computes temperature-scaled probabilities using max-logit subtraction ($e^{(x - x_{\max}) / T}$) to prevent floating-point underflow or overflow.
 
 * **Dynamic Model Architecture & Hardware Dispatch:**
   * **Model Agnosticism:** Dynamic architecture dispatch inspecting `config.json` to support **Qwen2**, **Llama 3**, and **Mistral** open-weight model families.
@@ -40,11 +38,11 @@ Instead of waiting for autoregressive text generation (token-by-token parsing ta
   * **Zero-Panic Error Propagation:** Structured JSON error responses replace thread panics across network workers.
   * **Sub-Millisecond Micro-Metrics:** Built-in `LatencyTimer` utility providing microsecond (`elapsed_us`) and millisecond (`elapsed_ms`) timing accuracy.
 
-
+---
 
 ## 🏗️ Architecture & Execution Flow
 
-```` ```mermaid 
+```mermaid
 flowchart TD
     A["Incoming Payload / Prompt"] --> B["Schema Mapper :: Resolve Single-Token Schema"]
     B --> C["Candle Engine :: Single Prefill Pass (1–5ms)"]
@@ -55,8 +53,8 @@ flowchart TD
     F -->|Route Intent| G["Target Agent / Microservice"]
     F -->|Guardrail Pass| H["Primary LLM Pipeline"]
     F -->|Guardrail Fail| I["Block Request"]
-  ---
-````
+
+
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
