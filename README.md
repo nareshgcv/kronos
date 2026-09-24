@@ -7,7 +7,7 @@
 [![Hardware Acceleration](https://img.shields.io/badge/Acceleration-CUDA_%7C_Metal-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
- # ⚡ Kronos Core
+ # ⚡ Kronos 
 
 **Kronos Core** is an ultra-low-latency, zero-generation **System 1 decision engine** built in pure Rust and powered by [`candle`](https://github.com/huggingface/candle). 
 
@@ -56,7 +56,7 @@ flowchart TD
     F -->|Guardrail Pass| H["Primary LLM Pipeline"]
     F -->|Guardrail Fail| I["Block Request"]
   ---
-
+```
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
