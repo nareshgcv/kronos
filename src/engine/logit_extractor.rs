@@ -1,107 +1,73 @@
-use crate::tokenizer::schema_mapper::ResolvedChoice;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+//! Candidate logit extraction and temperature-scaled softmax.
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProbabilityOutput {
-    pub selected_choice: String,
-    pub confidence: f32,
-    pub probabilities: HashMap<String, f32>,
+use super::ChoiceProbability;
+use crate::tokenizer::schema_mapper::ResolvedChoice;
+use anyhow::{bail, Result};
+
+#[derive(Debug, Clone)]
+pub struct Distribution {
+    /// Same order as the candidates passed in.
+    pub choices: Vec<ChoiceProbability>,
+    /// Index of the highest-probability choice (first one wins ties).
+    pub best: usize,
+    /// Full-vocab probability mass on the candidates at T = 1.
+    pub choice_mass: f32,
 }
 
 pub struct LogitExtractor;
 
 impl LogitExtractor {
-    /// Computes temperature-scaled Softmax probability distribution strictly across schema choice tokens.
-    pub fn compute_probabilities(
-        raw_logits: &[f32],
-        candidates: &[ResolvedChoice],
-        temperature: f32,
-    ) -> ProbabilityOutput {
+    pub fn compute(logits: &[f32], candidates: &[ResolvedChoice], temperature: f32) -> Result<Distribution> {
         if candidates.is_empty() {
-            return ProbabilityOutput {
-                selected_choice: String::new(),
-                confidence: 0.0,
-                probabilities: HashMap::new(),
+            bail!("no candidate choices");
+        }
+        if !temperature.is_finite() || temperature <= 0.0 {
+            bail!("temperature must be a finite value > 0");
+        }
+
+        let mut raw = Vec::with_capacity(candidates.len());
+        for c in candidates {
+            let Some(&logit) = logits.get(c.token_id as usize) else {
+                bail!(
+                    "token id {} for '{}' is outside the logits vector (len {})",
+                    c.token_id,
+                    c.choice,
+                    logits.len()
+                );
             };
-        }
-
-        let temp = if temperature <= 0.0 { 1.0 } else { temperature };
-
-        let mut max_logit = f32::NEG_INFINITY;
-        let mut scaled_logits = Vec::with_capacity(candidates.len());
-
-        // 1. Extract and scale target logits safely with temperature
-        for candidate in candidates {
-            let token_id = candidate.token_id as usize;
-            let raw_logit = raw_logits.get(token_id).copied().unwrap_or(0.0);
-            let logit = raw_logit / temp;
-
-            if logit > max_logit {
-                max_logit = logit;
-            }
-            scaled_logits.push(logit);
-        }
-
-        // 2. Compute numerically stable Softmax exponents
-        let mut sum_exp = 0.0f32;
-        let mut exps = Vec::with_capacity(scaled_logits.len());
-        for &logit in &scaled_logits {
-            let exp_val = (logit - max_logit).exp();
-            exps.push(exp_val);
-            sum_exp += exp_val;
-        }
-
-        // Defensive check against potential 0.0 or NaN division
-        if sum_exp <= 0.0 || sum_exp.is_nan() {
-            sum_exp = 1.0;
-        }
-
-        // 3. Normalize to probabilities & identify ArgMax choice
-        let mut probabilities = HashMap::with_capacity(candidates.len());
-        let mut best_choice = candidates[0].choice_text.clone();
-        let mut max_prob = -1.0f32;
-
-        for (i, candidate) in candidates.iter().enumerate() {
-            let prob = exps[i] / sum_exp;
-            probabilities.insert(candidate.choice_text.clone(), prob);
-
-            if prob > max_prob {
-                max_prob = prob;
-                best_choice = candidate.choice_text.clone();
-            }
-        }
-
-        ProbabilityOutput {
-            selected_choice: best_choice,
-            confidence: max_prob,
-            probabilities,
-        }
+        assert!((sum - 1.0).abs() < 1e-5);
+        assert_eq!(d.best, 0);
+        assert_eq!(d.choices[0].choice, "a");
     }
-}        for &logit in &scaled_logits {
-            let exp_val = (logit - max_logit).exp();
-            exps.push(exp_val);
-            sum_exp += exp_val;
-        }
 
-        let mut probabilities = HashMap::new();
-        let mut best_choice = String::new();
-        let mut max_prob = -1.0f32;
+    #[test]
+    fn lower_temperature_sharpens() {
+        let logits = [2.0, 1.0];
+        let cands = [rc("a", 0), rc("b", 1)];
+        let cold = LogitExtractor::compute(&logits, &cands, 0.5).unwrap();
+        let hot = LogitExtractor::compute(&logits, &cands, 2.0).unwrap();
+        assert!(cold.choices[0].probability > hot.choices[0].probability);
+    }
 
-        for (i, candidate) in candidates.iter().enumerate() {
-            let prob = exps[i] / sum_exp;
-            probabilities.insert(candidate.choice_text.clone(), prob);
+    #[test]
+    fn out_of_range_token_is_an_error() {
+        assert!(LogitExtractor::compute(&[0.0, 1.0], &[rc("a", 0), rc("b", 5)], 1.0).is_err());
+    }
 
-            if prob > max_prob {
-                max_prob = prob;
-                best_choice = candidate.choice_text.clone();
-            }
-        }
+    #[test]
+    fn rejects_bad_temperature() {
+        let cands = [rc("a", 0), rc("b", 1)];
+        assert!(LogitExtractor::compute(&[0.0, 1.0], &cands, 0.0).is_err());
+        assert!(LogitExtractor::compute(&[0.0, 1.0], &cands, f32::NAN).is_err());
+    }
 
-        ProbabilityOutput {
-            selected_choice: best_choice,
-            confidence: max_prob,
-            probabilities,
-        }
+    #[test]
+    fn choice_mass_tracks_full_vocab() {
+        // Model strongly prefers token 0, which isn't a candidate.
+        let logits = [10.0, 0.0, 0.0];
+        let off = LogitExtractor::compute(&logits, &[rc("a", 1), rc("b", 2)], 1.0).unwrap();
+        assert!(off.choice_mass < 0.01);
+        let on = LogitExtractor::compute(&logits, &[rc("x", 0), rc("a", 1)], 1.0).unwrap();
+        assert!(on.choice_mass > 0.99);
     }
 }
