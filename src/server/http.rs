@@ -1,116 +1,75 @@
-use crate::engine::candle_backend::CandleEngine;
-use crate::engine::logit_extractor::LogitExtractor;
-use crate::tokenizer::schema_mapper::SchemaMapper;
+//! Axum HTTP/REST endpoints.
+
+use crate::engine::{Decision, DecisionRequest, KronosError};
+use crate::EmbeddedKronos;
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde_json::json;
 use std::sync::Arc;
-use std::time::Instant;
+use tokio::sync::Semaphore;
 
-#[derive(Deserialize)]
-pub struct ApiRequest {
-    pub prompt: String,
-    pub choices: Vec<String>,
-    #[serde(default = "default_temp")]
-    pub temperature: f32,
-}
-
-fn default_temp() -> f32 {
-    1.0
-}
-
-#[derive(Serialize)]
-pub struct ApiResponse {
-    pub selected_choice: String,
-    pub confidence: f32,
-    pub probabilities: HashMap<String, f32>,
-    pub latency_ms: f64,
-}
-
-#[derive(Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
-}
-
+#[derive(Clone)]
 pub struct AppState {
-    pub engine: CandleEngine,
+    pub kronos: EmbeddedKronos,
+    /// Shared with the IPC server: caps total in-flight + queued work.
+    pub queue: Arc<Semaphore>,
 }
 
-pub fn create_router(state: Arc<AppState>) -> Router {
+pub fn create_router(state: AppState, max_body_bytes: usize) -> Router {
     Router::new()
-        .route("/health", get(handle_health))
-        .route("/v1/decision", post(handle_decision))
+        .route("/health", get(health))
+        .route("/metrics", get(metrics))
+        .route("/v1/decision", post(decide))
+        .layer(DefaultBodyLimit::max(max_body_bytes))
         .with_state(state)
 }
 
-async fn handle_health() -> impl IntoResponse {
-    StatusCode::OK
+async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    Json(json!({
+        "status": "ok",
+        "model": state.kronos.model_kind(),
+        "device": state.kronos.device_label(),
+        "prompt_format": state.kronos.prompt_format(),
+    }))
 }
 
-async fn handle_decision(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<ApiRequest>,
-) -> Result<Json<ApiResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let start = Instant::now();
+async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.kronos.stats())
+}
 
-    // Offload CPU/GPU intensive execution to a blocking thread pool
+async fn decide(
+    State(state): State<AppState>,
+    Json(req): Json<DecisionRequest>,
+) -> Result<Json<Decision>, KronosError> {
+    let permit = Arc::clone(&state.queue)
+        .try_acquire_owned()
+        .map_err(|_| KronosError::Busy)?;
+    let kronos = state.kronos.clone();
+
+    // The permit moves into the blocking task so it stays held even if the
+    // client disconnects and this future is dropped.
     tokio::task::spawn_blocking(move || {
-        // 1. Map choices to single token IDs
-        let resolved_choices = SchemaMapper::resolve_choices(
-            state.engine.tokenizer(),
-            &payload.choices,
-        )
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: format!("Schema Mapper Error: {e}"),
-                }),
-            )
-        })?;
-
-        // 2. Run single forward prefill pass
-        let (logits, _) = state
-            .engine
-            .forward_prefill_logits(&payload.prompt)
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: format!("Inference Engine Error: {e}"),
-                    }),
-                )
-            })?;
-
-        // 3. Extract Softmax probabilities
-        let output = LogitExtractor::compute_probabilities(
-            &logits,
-            &resolved_choices,
-            payload.temperature,
-        );
-
-        let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-        Ok(Json(ApiResponse {
-            selected_choice: output.selected_choice,
-            confidence: output.confidence,
-            probabilities: output.probabilities,
-            latency_ms,
-        }))
+        let _permit = permit;
+        kronos.evaluate(&req)
     })
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Task execution failed: {e}"),
-            }),
-        )
-    })?
+    .map_err(|e| KronosError::Inference(format!("worker task failed: {e}")))?
+    .map(Json)
+}
+
+impl IntoResponse for KronosError {
+    fn into_response(self) -> Response {
+        let status = match &self {
+            KronosError::InvalidRequest(_) | KronosError::Schema(_) => StatusCode::BAD_REQUEST,
+            KronosError::Busy => StatusCode::SERVICE_UNAVAILABLE,
+            KronosError::Inference(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        let body = Json(json!({ "error": self.to_string(), "kind": self.kind() }));
+        (status, body).into_response()
+    }
 }
