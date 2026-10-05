@@ -1,136 +1,186 @@
-use anyhow::{Context, Result};
-use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_nn::VarBuilder;
-use candle_transformers::models::{
-    llama::{Config as LlamaConfig, Model as LlamaModel},
-    mistral::{Config as MistralConfig, Model as MistralModel},
-    qwen2::{Config as QwenConfig, ModelForCausalLM as QwenModel},
-};
-use std::path::{Path, PathBuf};
-use tokenizers::Tokenizer;
+//! Candle transformer prefill runner.
 
-/// Supported open-weight model architectures for Kronos
-pub enum ModelArchitecture {
-    Qwen2(QwenModel),
-    Llama(LlamaModel),
-    Mistral(MistralModel),
+use super::LogitBackend;
+use crate::config::{dtype_for_device, PromptFormat};
+use anyhow::{bail, Context, Result};
+use candle_core::{DType, Device, Tensor};
+use candle_nn::VarBuilder;
+use candle_transformers::models::{llama, mistral, qwen2};
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelKind {
+    Qwen2,
+    Llama,
+    Mistral,
 }
 
-impl ModelArchitecture {
-    pub fn forward(&self, input_tensor: &Tensor, seq_len_offset: usize) -> Result<Tensor> {
+impl ModelKind {
+    /// Note: `llama` defaults to the Llama 3 template. For Llama 2 checkpoints,
+    /// set the prompt format explicitly.
+    pub fn default_prompt_format(self) -> PromptFormat {
         match self {
-            Self::Qwen2(m) => Ok(m.forward(input_tensor, seq_len_offset)?),
-            Self::Llama(m) => Ok(m.forward(input_tensor, seq_len_offset)?),
-            Self::Mistral(m) => Ok(m.forward(input_tensor, seq_len_offset)?),
+            Self::Qwen2 => PromptFormat::ChatMl,
+            Self::Llama => PromptFormat::Llama3,
+            Self::Mistral => PromptFormat::Mistral,
         }
     }
 }
 
+enum Model {
+    Qwen2(qwen2::ModelForCausalLM),
+    Mistral(mistral::Model),
+    /// Llama keeps its cache outside the model; it's created with KV caching off.
+    Llama { model: llama::Llama, cache: llama::Cache },
+}
+
 pub struct CandleEngine {
-    model: ModelArchitecture,
-    tokenizer: Tokenizer,
+    model: Model,
     device: Device,
+    kind: ModelKind,
+    vocab_size: usize,
 }
 
 impl CandleEngine {
-    pub fn load<P: AsRef<Path>>(model_dir: P, device: Device) -> Result<Self> {
+    pub fn load(model_dir: impl AsRef<Path>, device: Device) -> Result<Self> {
         let dir = model_dir.as_ref();
         let config_path = dir.join("config.json");
-        let tokenizer_path = dir.join("tokenizer.json");
-
         let config_str = std::fs::read_to_string(&config_path)
-            .with_context(|| format!("Missing config at {:?}", config_path))?;
+            .with_context(|| format!("reading {}", config_path.display()))?;
+        let config_json: serde_json::Value = serde_json::from_str(&config_str)
+            .with_context(|| format!("parsing {}", config_path.display()))?;
 
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| anyhow::anyhow!("Failed loading tokenizer: {}", e))?;
+        let kind = detect_kind(&config_json)?;
+        let vocab_size = config_json
+            .get("vocab_size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
 
-        // 1. Automatically collect all .safetensors files (supports single-file and sharded models)
-        let mut weights_paths: Vec<PathBuf> = Vec::new();
-        if dir.join("model.safetensors").exists() {
-            weights_paths.push(dir.join("model.safetensors"));
-        } else {
-            for entry in std::fs::read_dir(dir)? {
-                let path = entry?.path();
-                if let Some(ext) = path.extension() {
-                    if ext == "safetensors" {
-                        weights_paths.push(path);
-                    }
+        let weights = collect_safetensors(dir)?;
+        let dtype = dtype_for_device(&device);
+        // SAFETY: weight files must not be modified while mapped.
+        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&weights, dtype, &device)? };
+
+        let model = match kind {
+            ModelKind::Qwen2 => {
+                let cfg: qwen2::Config = serde_json::from_str(&config_str)?;
+                Model::Qwen2(qwen2::ModelForCausalLM::new(&cfg, vb)?)
+            }
+            ModelKind::Mistral => {
+                let cfg: mistral::Config = serde_json::from_str(&config_str)?;
+            }
+            ModelKind::Llama => {
+                let raw: llama::LlamaConfig = serde_json::from_str(&config_str)?;
+                let cfg = raw.into_config(false);
+                let cache = llama::Cache::new(false, dtype, &cfg, &device)?;
+                Model::Llama {
+                    model: llama::Llama::load(vb, &cfg)?,
+                    cache,
                 }
             }
-        }
-
-        if weights_paths.is_empty() {
-            anyhow::bail!("No .safetensors weight files found in {:?}", dir);
-        }
-
-        // Select precision according to hardware device
-        let dtype = match device {
-            Device::Cpu => DType::F32,
-            _ => DType::BF16,
-        };
-
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&weights_paths, dtype, &device)?
-        };
-
-        // 2. Auto-detect model architecture from config.json (`architectures` or `model_type`)
-        let config_json: serde_json::Value = serde_json::from_str(&config_str)?;
-        let model_type = config_json
-            .get("model_type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("qwen2");
-
-        let model = match model_type {
-            "qwen2" => {
-                let config: QwenConfig = serde_json::from_str(&config_str)?;
-                ModelArchitecture::Qwen2(QwenModel::new(&config, vb)?)
-            }
-            "llama" => {
-                let config: LlamaConfig = serde_json::from_str(&config_str)?;
-                ModelArchitecture::Llama(LlamaModel::new(&config, vb)?)
-            }
-            "mistral" => {
-                let config: MistralConfig = serde_json::from_str(&config_str)?;
-                ModelArchitecture::Mistral(MistralModel::new(&config, vb)?)
-            }
-            other => anyhow::bail!("Unsupported model architecture: '{}'", other),
         };
 
         Ok(Self {
             model,
-            tokenizer,
             device,
+            kind,
+            vocab_size,
         })
     }
 
-    /// Evaluates sequence context and extracts output logits at the final position
-    pub fn forward_prefill_logits(&self, prompt: &str) -> Result<(Vec<f32>, usize)> {
-        let encoding = self
-            .tokenizer
-            .encode(prompt, true)
-            .map_err(|e| anyhow::anyhow!("Prompt encoding failed: {}", e))?;
+    pub fn kind(&self) -> ModelKind {
+        self.kind
+    }
 
-        let input_ids = encoding.get_ids();
-        let seq_len = input_ids.len();
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+}
 
-        if seq_len == 0 {
-            anyhow::bail!("Prompt token sequence is empty.");
+impl LogitBackend for CandleEngine {
+    fn next_token_logits(&mut self, input_ids: &[u32]) -> Result<Vec<f32>> {
+        if input_ids.is_empty() {
+            bail!("prompt produced no tokens");
         }
+        // Shape [1, seq_len]
+        let input = Tensor::new(input_ids, &self.device)?.unsqueeze(0)?;
 
-        // Tensor shape: [1, seq_len]
-        let input_tensor = Tensor::new(input_ids, &self.device)?.unsqueeze(0)?;
+        let logits = match &mut self.model {
+            // Stateful models: drop anything left from the previous request.
+            Model::Qwen2(m) => {
+                m.clear_kv_cache();
+                m.forward(&input, 0)?
+            }
+            Model::Mistral(m) => {
+                m.clear_kv_cache();
+                m.forward(&input, 0)?
+            }
+            Model::Llama { model, cache } => model.forward(&input, 0, cache)?,
+        };
 
-        // Execute single forward pass using dynamic model architecture
-        let logits = self.model.forward(&input_tensor, 0)?;
-
-        // Extract last position logits: [1, seq_len, vocab_size] -> [vocab_size]
-        let last_logits = logits.i((0, seq_len - 1))?;
-        let logits_vec: Vec<f32> = last_logits.to_dtype(DType::F32)?.to_vec1()?;
-
-        Ok((logits_vec, seq_len))
+        // All three heads already return only the last position
+        // ([1, 1, vocab] or [1, vocab]), so flatten instead of indexing seq_len - 1.
+        let logits = logits.flatten_all()?.to_dtype(DType::F32)?.to_vec1::<f32>()?;
+        Ok(logits)
     }
 
-    pub fn tokenizer(&self) -> &Tokenizer {
-        &self.tokenizer
+    fn vocab_size(&self) -> usize {
+        self.vocab_size
     }
+}
+
+fn detect_kind(config: &serde_json::Value) -> Result<ModelKind> {
+    let model_type = config
+        .get("model_type")
+        .and_then(|v| v.as_str())
+        .context("config.json has no `model_type` field")?;
+    match model_type {
+        "qwen2" => Ok(ModelKind::Qwen2),
+        "llama" => Ok(ModelKind::Llama),
+        "mistral" => Ok(ModelKind::Mistral),
+        other => bail!("unsupported model_type '{other}' (supported: qwen2, llama, mistral)"),
+    }
+}
+
+/// `model.safetensors`, else the shards listed in the index, else every
+/// `*.safetensors` except Mistral's duplicate `consolidated` file.
+fn collect_safetensors(dir: &Path) -> Result<Vec<PathBuf>> {
+    }
+
+    let index = dir.join("model.safetensors.index.json");
+    if index.exists() {
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&index)?)?;
+        let map = json
+            .get("weight_map")
+            .and_then(|m| m.as_object())
+            .context("safetensors index has no `weight_map`")?;
+        let mut files: Vec<PathBuf> = map
+            .values()
+            .filter_map(|v| v.as_str())
+            .map(|f| dir.join(f))
+            .collect();
+        files.sort();
+        files.dedup();
+        return Ok(files);
+    }
+
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let is_safetensors = path.extension().is_some_and(|e| e == "safetensors");
+        let is_consolidated = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("consolidated"));
+        if is_safetensors && !is_consolidated {
+            files.push(path);
+        }
+    }
+    files.sort();
+    if files.is_empty() {
+        bail!("no .safetensors files found in {}", dir.display());
+    }
+    Ok(files)
 }
