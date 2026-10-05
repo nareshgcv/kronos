@@ -2,24 +2,45 @@
 name = "kronos"
 version = "0.1.0"
 edition = "2021"
+description = "Zero-generation decision runtime: one prefill pass, constrained softmax over single-token choices."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "kronos"
+path = "src/main.rs"
 
 [dependencies]
-# Candle Framework (Hugging Face Pure-Rust Machine Learning)
+# Candle (Hugging Face pure-Rust ML)
 candle-core = "0.8"
 candle-nn = "0.8"
 candle-transformers = "0.8"
 
-# Fast Tokenizer & Serialization
+# Tokenizer & serialization
 tokenizers = "0.20"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
-# Async Execution & Web Runtime
+# Async runtime & HTTP
 tokio = { version = "1.38", features = ["full"] }
 axum = "0.7"
-anyhow = "1.0"
+
+# Errors & logging
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+
+[[bench]]
+name = "latency"
+harness = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
