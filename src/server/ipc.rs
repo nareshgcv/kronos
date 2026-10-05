@@ -1,148 +1,134 @@
-use crate::engine::candle_backend::CandleEngine;
-use crate::engine::logit_extractor::LogitExtractor;
-use crate::tokenizer::schema_mapper::SchemaMapper;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixListener;
+//! Unix-socket IPC server: newline-delimited JSON.
+//!
+//! One JSON request per line, one JSON reply per line. Requests on the same
+//! connection are answered in order. This is a local socket, not shared memory;
+//! it avoids TCP/HTTP overhead but still serializes JSON.
 
-#[derive(Deserialize)]
-pub struct IpcRequest {
-    pub prompt: String,
-    pub choices: Vec<String>,
-    pub temperature: Option<f32>,
-}
+use crate::engine::{Decision, DecisionRequest};
+use crate::EmbeddedKronos;
+use anyhow::{Context, Result};
+use serde::Serialize;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::OwnedWriteHalf;
+use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::Semaphore;
 
 #[derive(Serialize)]
-pub struct IpcResponse {
-    pub selected_choice: String,
-    pub confidence: f32,
-    pub probabilities: HashMap<String, f32>,
-    pub latency_ms: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+#[serde(tag = "status", rename_all = "lowercase")]
+enum IpcReply {
+    Ok { decision: Decision },
+    Error { kind: &'static str, error: String },
+}
+
+impl IpcReply {
+    fn error(kind: &'static str, error: impl Into<String>) -> Self {
+        Self::Error {
+            kind,
+            error: error.into(),
+        }
+    }
 }
 
 pub struct IpcServer {
-    socket_path: String,
-    engine: Arc<CandleEngine>,
+    socket_path: PathBuf,
+    kronos: EmbeddedKronos,
+    queue: Arc<Semaphore>,
+    max_line_bytes: usize,
 }
 
 impl IpcServer {
-    pub fn new(socket_path: String, engine: Arc<CandleEngine>) -> Self {
-        Self { socket_path, engine }
+    pub fn new(socket_path: PathBuf, kronos: EmbeddedKronos, queue: Arc<Semaphore>, max_line_bytes: usize) -> Self {
+        Self {
+            socket_path,
+            kronos,
+            queue,
+            max_line_bytes,
+        }
     }
 
-    pub async fn run(&self) -> Result<()> {
-        // Clean up stale socket file before binding
-        let _ = tokio::fs::remove_file(&self.socket_path).await;
+    pub async fn run(self) -> Result<()> {
+        if self.socket_path.exists() {
+            std::fs::remove_file(&self.socket_path)
+                .with_context(|| format!("removing stale socket {}", self.socket_path.display()))?;
+        }
+        let listener = UnixListener::bind(&self.socket_path)
+            .with_context(|| format!("binding {}", self.socket_path.display()))?;
+        // Owner-only: anything that can connect can drive the model.
+        std::fs::set_permissions(&self.socket_path, std::fs::Permissions::from_mode(0o600))?;
+        tracing::info!("IPC listening on {}", self.socket_path.display());
 
-        let listener = UnixListener::bind(&self.socket_path)?;
-        println!("[IPC] Listening on Unix Socket: {}", self.socket_path);
-
+        let this = Arc::new(self);
         loop {
             let (stream, _) = listener.accept().await?;
-            let engine = Arc::clone(&self.engine);
-
+            let this = Arc::clone(&this);
             tokio::spawn(async move {
-                let (reader, mut writer) = stream.into_split();
-                let mut buffered_reader = BufReader::new(reader);
-                let mut line = String::new();
-
-                // Reads line-delimited JSON messages (\n framing) to handle variable payload sizes cleanly
-                while buffered_reader.read_line(&mut line).await.unwrap_or(0) > 0 {
-                    let start = std::time::Instant::now();
-                    let payload_str = line.trim().to_string();
-                    line.clear();
-
-                    if payload_str.is_empty() {
-                        continue;
-                    }
-
-                    let engine = Arc::clone(&engine);
-
-                    // Execute model inference on blocking thread pool
-                    let response = tokio::task::spawn_blocking(move || {
-                        // 1. Deserialize request payload
-                        let req: IpcRequest = match serde_json::from_str(&payload_str) {
-                            Ok(val) => val,
-                            Err(e) => {
-                                return IpcResponse {
-                                    selected_choice: String::new(),
-                                    confidence: 0.0,
-                                    probabilities: HashMap::new(),
-                                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                                    error: Some(format!("Invalid Payload JSON: {e}")),
-                                };
-                            }
-                        };
-
-                        // 2. Resolve choices strictly to single token IDs
-                        let resolved = match SchemaMapper::resolve_choices(
-                            engine.tokenizer(),
-                            &req.choices,
-                        ) {
-                            Ok(res) => res,
-                            Err(e) => {
-                                return IpcResponse {
-                                    selected_choice: String::new(),
-                                    confidence: 0.0,
-                                    probabilities: HashMap::new(),
-                                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                                    error: Some(format!("Schema Violation: {e}")),
-                                };
-                            }
-                        };
-
-                        // 3. Run single forward prefill pass
-                        let (logits, _) = match engine.forward_prefill_logits(&req.prompt) {
-                            Ok(res) => res,
-                            Err(e) => {
-                                return IpcResponse {
-                                    selected_choice: String::new(),
-                                    confidence: 0.0,
-                                    probabilities: HashMap::new(),
-                                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                                    error: Some(format!("Inference Error: {e}")),
-                                };
-                            }
-                        };
-
-                        // 4. Extract Softmax probability vector
-                        let output = LogitExtractor::compute_probabilities(
-                            &logits,
-                            &resolved,
-                            req.temperature.unwrap_or(1.0),
-                        );
-
-                        IpcResponse {
-                            selected_choice: output.selected_choice,
-                            confidence: output.confidence,
-                            probabilities: output.probabilities,
-                            latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                            error: None,
-                        }
-                    })
-                    .await
-                    .unwrap_or_else(|e| IpcResponse {
-                        selected_choice: String::new(),
-                        confidence: 0.0,
-                        probabilities: HashMap::new(),
-                        latency_ms: start.elapsed().as_secs_f64() * 1000.0,
-                        error: Some(format!("Worker Task Error: {e}")),
-                    });
-
-                    // Write JSON response followed by newline character delimiter
-                    let mut response_bytes = serde_json::to_vec(&response).unwrap();
-                    response_bytes.push(b'\n');
-
-                    if writer.write_all(&response_bytes).await.is_err() {
-                        break;
-                    }
+                if let Err(e) = this.handle(stream).await {
+                    tracing::debug!("IPC connection closed: {e:#}");
                 }
             });
         }
     }
+
+    async fn handle(&self, stream: UnixStream) -> Result<()> {
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+        let mut buf = Vec::with_capacity(4096);
+        let limit = self.max_line_bytes as u64 + 1;
+
+        loop {
+            buf.clear();
+            // Bounded read: a client can't make us buffer an unbounded line.
+            let n = (&mut reader).take(limit).read_until(b'\n', &mut buf).await?;
+            if n == 0 {
+                return Ok(());
+            }
+            if buf.last() != Some(&b'\n') && n as u64 >= limit {
+                let reply = IpcReply::error(
+                    "invalid_request",
+                    format!("request exceeds {} bytes", self.max_line_bytes),
+                );
+                write_reply(&mut writer, &reply).await?;
+                return Ok(()); // framing is lost, close the connection
+            }
+            if buf.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+
+            let reply = self.process(&buf).await;
+            write_reply(&mut writer, &reply).await?;
+        }
+    }
+
+    async fn process(&self, line: &[u8]) -> IpcReply {
+        let req: DecisionRequest = match serde_json::from_slice(line) {
+            Ok(r) => r,
+            Err(e) => return IpcReply::error("invalid_request", format!("invalid JSON: {e}")),
+        };
+        let permit = match Arc::clone(&self.queue).try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => return IpcReply::error("busy", "server busy, retry later"),
+        };
+        let kronos = self.kronos.clone();
+
+        match tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            kronos.evaluate(&req)
+        })
+        .await
+        {
+            Ok(Ok(decision)) => IpcReply::Ok { decision },
+            Ok(Err(e)) => IpcReply::error(e.kind(), e.to_string()),
+            Err(e) => IpcReply::error("inference_error", format!("worker task failed: {e}")),
+        }
+    }
+}
+
+async fn write_reply(writer: &mut OwnedWriteHalf, reply: &IpcReply) -> Result<()> {
+    let mut bytes = serde_json::to_vec(reply)?;
+    bytes.push(b'\n');
+    writer.write_all(&bytes).await?;
+    Ok(())
 }
