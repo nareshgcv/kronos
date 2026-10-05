@@ -1,66 +1,100 @@
-mod config;
-mod engine;
-mod server;
-mod tokenizer;
-
 use anyhow::Result;
-use config::{select_best_device, KronosConfig};
-use engine::candle_backend::CandleEngine;
-use server::http::{create_router, AppState};
-use server::ipc::IpcServer;
-use std::net::SocketAddr;
+use kronos::server::http::{create_router, AppState};
+use kronos::{EmbeddedKronos, KronosConfig};
 use std::sync::Arc;
+use tokio::sync::Semaphore;
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("==================================================");
-    println!("     KRONOS CORE :: System 1 Engine Initializing   ");
-    println!("==================================================");
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
 
-    let config = KronosConfig::default();
-    let device = select_best_device();
+    // Config: defaults < KRONOS_* env vars < first CLI arg (model dir)
+    let mut config = KronosConfig::from_env()?;
+    if let Some(dir) = std::env::args().nth(1) {
+        config.model_dir = dir.into();
+    }
+    config.validate()?;
 
-    println!("[Device] Selected Hardware Acceleration: {:?}", device);
+    info!("loading model from {}", config.model_dir.display());
+    let kronos = {
+        let cfg = config.clone();
+        tokio::task::spawn_blocking(move || EmbeddedKronos::from_config(&cfg)).await??
+    };
+    info!(
+        model = ?kronos.model_kind(),
+        device = kronos.device_label(),
+        prompt_format = ?kronos.prompt_format(),
+        "model loaded"
+    );
 
-    // 1. Load model weights into memory
-    let engine = CandleEngine::load(&config.model_dir, device)?;
-    let shared_engine = Arc::new(engine);
-
-    // 2. Spawn Sub-2ms Unix IPC Socket Listener
-    if config.use_ipc {
-        if std::path::Path::new(&config.ipc_socket_path).exists() {
-            let _ = std::fs::remove_file(&config.ipc_socket_path);
-        }
-
-        let ipc_server = IpcServer::new(config.ipc_socket_path.clone(), Arc::clone(&shared_engine));
-        tokio::spawn(async move {
-            if let Err(e) = ipc_server.run().await {
-                eprintln!("[IPC Fatal] Server crashed: {}", e);
-            }
-        });
+    if config.warmup {
+        let k = kronos.clone();
+        tokio::task::spawn_blocking(move || k.warmup()).await??;
+        info!("warmup pass complete");
     }
 
-    // 3. Start HTTP/REST API Server (Axum)
-    let state = Arc::new(AppState {
-        engine: (*shared_engine).clone_engine(),
-    });
+    let queue = Arc::new(Semaphore::new(config.max_queued_requests));
 
-    let app = create_router(state);
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.server_port));
+    #[cfg(unix)]
+    {
+        if config.use_ipc {
+            let ipc = kronos::server::ipc::IpcServer::new(
+                config.ipc_socket_path.clone(),
+                kronos.clone(),
+                Arc::clone(&queue),
+                config.max_request_bytes,
+            );
+            tokio::spawn(async move {
+                if let Err(e) = ipc.run().await {
+                    error!("IPC server stopped: {e:#}");
+                }
+            });
+        }
+    }
 
-    println!("[HTTP] REST API listening on http://{}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let app = create_router(AppState { kronos, queue }, config.max_request_bytes);
+    let listener = tokio::net::TcpListener::bind(config.http_addr).await?;
+    info!("HTTP listening on http://{}", config.http_addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
+    #[cfg(unix)]
+    {
+        if config.use_ipc {
+            let _ = std::fs::remove_file(&config.ipc_socket_path);
+        }
+    }
+    info!("shut down cleanly");
     Ok(())
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install Ctrl+C signal handler");
-    println!("\n[System] Gracefully shutting down Kronos Core...");
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    info!("shutdown signal received");
 }
