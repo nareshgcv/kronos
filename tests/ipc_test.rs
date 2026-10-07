@@ -1,81 +1,56 @@
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::time::Instant;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+//! Needs a running server:
+//!   cargo run --release -- ./models/qwen2.5-0.5b-instruct
+//!   cargo test --test ipc_test -- --ignored
+#![cfg(unix)]
+
+use serde_json::{json, Value};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct IpcResponse {
-    selected_choice: String,
-    confidence: f32,
-    latency_ms: f64,
-}
+#[tokio::test]
+#[ignore = "requires a running Kronos server"]
+async fn ipc_roundtrip_and_error_handling() -> anyhow::Result<()> {
+    let path = std::env::var("KRONOS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/kronos.sock".to_owned());
+    let stream = UnixStream::connect(&path).await?;
+    let (reader, mut writer) = stream.into_split();
+    let mut lines = BufReader::new(reader).lines();
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let socket_path = "/tmp/kronos.sock";
-
-    println!("==================================================");
-    println!("     KRONOS CORE :: Sub-10ms IPC Test Suite       ");
-    println!("==================================================");
-
-    // 1. Establish connection to local Kronos Unix Socket
-    println!("[IPC Client] Connecting to socket at: {}", socket_path);
-    let mut stream = UnixStream::connect(socket_path)
-        .await
-        .with_context(|| format!("Failed to connect to Kronos IPC socket at '{}'. Is Kronos server running?", socket_path))?;
-
-    println!("[IPC Client] Connection established. Sending telemetry state...");
-
-    // 2. Construct sample real-time game telemetry payload
+    // 1. Valid request (newline-terminated!)
     let payload = json!({
-        "prompt": "SYS_STATE: PLAYER_HP=12% AMMO=5% ENEMIES_NEARBY=8 DISTANCE=2m | ACTION_DECISION:",
-        "choices": [
-            "SPAWN_HEALTH",
-            "SPAWN_AMMO",
-            "TRIGGER_FLANK",
-            "HOLD"
-        ],
-        "temperature": 0.8
+        "prompt": "Player HP 12%, ammo 5%, 8 enemies within 2m. What should the game director do?",
+        "choices": ["heal", "retreat", "attack"],
+        "temperature": 0.8,
+        "min_confidence": 0.5
     });
+    let mut bytes = serde_json::to_vec(&payload)?;
+    bytes.push(b'\n');
+    writer.write_all(&bytes).await?;
 
-    let payload_bytes = serde_json::to_vec(&payload)?;
+    let line = lines.next_line().await?.expect("server closed connection");
+    let reply: Value = serde_json::from_str(&line)?;
+    assert_eq!(reply["status"], "ok", "reply: {reply}");
+    let total: f64 = reply["decision"]["probabilities"]
+        .as_array()
+        .expect("probabilities array")
+        .iter()
+        .map(|c| c["probability"].as_f64().unwrap())
+        .sum();
+    assert!((total - 1.0).abs() < 1e-3);
 
-    // 3. Measure total client-side roundtrip latency
-    let start_time = Instant::now();
+    // 2. Malformed JSON -> error reply, connection stays open
+    writer.write_all(b"{not json}\n").await?;
+    let line = lines.next_line().await?.expect("server closed connection");
+    let reply: Value = serde_json::from_str(&line)?;
+    assert_eq!(reply["status"], "error");
+    assert_eq!(reply["kind"], "invalid_request");
 
-    // Send payload packet
-    stream.write_all(&payload_bytes).await?;
-
-    // Read response packet
-    let mut buffer = vec![0u8; 4096];
-    let bytes_read = stream.read(&mut buffer).await?;
-
-    let total_roundtrip_ms = start_time.elapsed().as_secs_f64() * 1000.0;
-
-    if bytes_read == 0 {
-        anyhow::bail!("Server closed connection without responding.");
-    }
-
-    // 4. Deserialize and display response
-    let response: IpcResponse = serde_json::from_slice(&buffer[..bytes_read])
-        .context("Failed to deserialize response from Kronos server.")?;
-
-    println!("\n==================================================");
-    println!("              KRONOS DECISION RESULT              ");
-    println!("==================================================");
-    println!("Selected Decision       : {}", response.selected_choice);
-    println!("Probability Confidence  : {:.2}%", response.confidence * 100.0);
-    println!("Server Inference Time   : {:.2} ms", response.latency_ms);
-    println!("Total IPC Roundtrip Time: {:.2} ms", total_roundtrip_ms);
-    println!("==================================================");
-
-    if total_roundtrip_ms < 10.0 {
-        println!("✅ SUCCESS: Decision delivered under 10ms SLA!");
-    } else {
-        println!("⚠️ WARNING: Latency exceeded 10ms threshold.");
-    }
+    // 3. Multi-token choice -> schema violation
+    writer
+        .write_all(b"{\"prompt\":\"x\",\"choices\":[\"SPAWN_HEALTH_PACK_NOW\",\"HOLD_POSITION_NOW\"]}\n")
+        .await?;
+    let line = lines.next_line().await?.expect("server closed connection");
+    let reply: Value = serde_json::from_str(&line)?;
+    assert_eq!(reply["kind"], "schema_violation");
 
     Ok(())
-      }
+}
