@@ -545,72 +545,64 @@ along with the hardware and workload used to produce the measurements.
 A basic latency benchmark can be run using:
 
 ```rust
+//! End-to-end decision latency (tokenize + prefill + softmax).
+//!
+//!   KRONOS_MODEL_DIR=./models/qwen2.5-0.5b-instruct cargo bench --bench latency
+//!   (add --features cuda or --features metal for GPU)
+
+use kronos::utils::metrics::percentile;
+use kronos::{DecisionRequest, EmbeddedKronos};
 use std::time::Instant;
-use hdrhistogram::Histogram;
-use kronos_core::{KronosEngine, Schema};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let engine = KronosEngine::init()?;
+fn main() -> anyhow::Result<()> {
+    let model_dir = std::env::var("KRONOS_MODEL_DIR")
+        .unwrap_or_else(|_| "./models/qwen2.5-0.5b-instruct".to_owned());
+    let iterations: usize = std::env::var("KRONOS_BENCH_ITERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(500);
 
-    let schema = Schema::choices(&[
-        "APPROVE",
-        "REJECT",
-        "HALT",
-    ]);
+    let kronos = EmbeddedKronos::new(&model_dir)?;
+    println!(
+        "model={:?} device={} format={:?}",
+        kronos.model_kind(),
+        kronos.device_label(),
+        kronos.prompt_format()
+    );
 
-    let prompt =
-        "Market volatility: high. Order size: 50,000 USD.";
+    let req = DecisionRequest {
+        prompt: "Market volatility: high. Order size: 50,000 USD. Account risk limit: 40,000 USD.".to_owned(),
+        choices: vec!["buy".into(), "sell".into(), "hold".into()],
+        temperature: None,
+        min_confidence: None,
+    };
 
-    // Warmup
-    let _ = engine.evaluate(prompt, &schema)?;
-
-    let iterations = 10_000;
-
-    let mut histogram =
-        Histogram::<u64>::new_with_bounds(
-            1,
-            1_000_000,
-            3,
-        )?;
-
-    for _ in 0..iterations {
-        let start = Instant::now();
-
-        let _decision =
-            engine.evaluate(prompt, &schema)?;
-
-        let duration =
-            start.elapsed().as_micros() as u64;
-
-        histogram.record(duration)?;
+    // Warmup: kernel compilation, allocator, choice cache
+    for _ in 0..10 {
+        kronos.evaluate(&req)?;
     }
 
-    println!("=== Kronos Latency Profile ===");
+    let mut samples = Vec::with_capacity(iterations);
+    let mut last = None;
+    for _ in 0..iterations {
+        let t = Instant::now();
+        last = Some(kronos.evaluate(&req)?);
+        samples.push(t.elapsed().as_micros() as u64);
+    }
+    samples.sort_unstable();
 
-    println!(
-        "p50:   {} µs ({:.2} ms)",
-        histogram.value_at_quantile(0.50),
-        histogram.value_at_quantile(0.50) as f64 / 1000.0
-    );
-
-    println!(
-        "p95:   {} µs ({:.2} ms)",
-        histogram.value_at_quantile(0.95),
-        histogram.value_at_quantile(0.95) as f64 / 1000.0
-    );
-
-    println!(
-        "p99:   {} µs ({:.2} ms)",
-        histogram.value_at_quantile(0.99),
-        histogram.value_at_quantile(0.99) as f64 / 1000.0
-    );
-
-    println!(
-        "Max:   {} µs ({:.2} ms)",
-        histogram.max(),
-        histogram.max() as f64 / 1000.0
-    );
-
+    let ms = |us: u64| us as f64 / 1000.0;
+    println!("=== Kronos latency, {iterations} iterations ===");
+    println!("p50: {:>8.3} ms", ms(percentile(&samples, 0.50)));
+    println!("p95: {:>8.3} ms", ms(percentile(&samples, 0.95)));
+    println!("p99: {:>8.3} ms", ms(percentile(&samples, 0.99)));
+    println!("max: {:>8.3} ms", ms(*samples.last().unwrap_or(&0)));
+    if let Some(d) = last {
+        println!(
+            "last decision: {} (confidence {:.3}, choice_mass {:.3}, {} prompt tokens)",
+            d.selected_choice, d.confidence, d.choice_mass, d.prompt_tokens
+        );
+    }
     Ok(())
 }
 ```
