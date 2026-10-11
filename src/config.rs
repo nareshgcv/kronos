@@ -92,7 +92,7 @@ impl KronosConfig {
         }
         Ok(())
     }
-}
+
 
 /// CUDA, then Metal, then CPU. Only succeeds for backends compiled in via features.
 pub fn select_best_device() -> Device {
