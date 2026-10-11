@@ -88,6 +88,19 @@ impl EmbeddedKronos {
         })
     }
 
+    /// Convenience wrapper: default temperature, no confidence threshold.
+    pub fn decide(&self, prompt: &str, choices: &[&str]) -> KronosResult<Decision> {
+        self.evaluate(&DecisionRequest {
+            prompt: prompt.to_owned(),
+            choices: choices.iter().map(|c| (*c).to_owned()).collect(),
+            temperature: None,
+            min_confidence: None,
+        })
+    }
+
+    /// Runs one decision: resolve choices -> single prefill -> constrained softmax.
+    pub fn evaluate(&self, req: &DecisionRequest) -> KronosResult<Decision> {
+        let timer = LatencyTimer::start();
         let result = self.evaluate_inner(req, &timer);
         match &result {
             Ok(_) => self.inner.stats.record(timer.elapsed_us()),
@@ -127,6 +140,10 @@ impl EmbeddedKronos {
         // 2. Resolve choices to single token IDs (cached, outside the engine lock)
         let resolved = inner
             .tokenizer
+            .resolve_choices(&req.choices)
+            .map_err(|e| KronosError::Schema(format!("{e:#}")))?;
+
+        // 3. Render chat template + tokenize prompt (outside the engine lock)
         let input_ids = inner
             .tokenizer
             .encode_prompt(&req.prompt, &req.choices)
