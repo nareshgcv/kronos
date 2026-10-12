@@ -1,4 +1,4 @@
-//! Maps a choice schema to single, distinct vocabulary token IDs.
+//! Schema Mapper: maps a choice schema to single, distinct vocabulary token IDs.
 
 use anyhow::{anyhow, bail, Result};
 use std::collections::{HashMap, HashSet};
