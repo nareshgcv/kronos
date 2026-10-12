@@ -1,28 +1,27 @@
-//! Candle transformer prefill runner.
+//! Candle transformer: single prefill pass, last-position logits.
 
 use super::LogitBackend;
 use crate::config::{dtype_for_device, PromptFormat};
 use anyhow::{bail, Context, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::{llama, mistral, qwen2};
+use candle_transformers::models::{llama, mistral, qwen3};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelKind {
-    Qwen2,
+    Qwen3,
     Llama,
     Mistral,
 }
 
 impl ModelKind {
-    /// Note: `llama` defaults to the Llama 3 template. For Llama 2 checkpoints,
-    /// set the prompt format explicitly.
+    /// `llama` defaults to the Llama 3 template. For Llama 2, set the format explicitly.
     pub fn default_prompt_format(self) -> PromptFormat {
         match self {
-            Self::Qwen2 => PromptFormat::ChatMl,
+            Self::Qwen3 => PromptFormat::Qwen3,
             Self::Llama => PromptFormat::Llama3,
             Self::Mistral => PromptFormat::Mistral,
         }
@@ -30,9 +29,9 @@ impl ModelKind {
 }
 
 enum Model {
-    Qwen2(qwen2::ModelForCausalLM),
+    Qwen3(qwen3::ModelForCausalLM),
     Mistral(mistral::Model),
-    /// Llama keeps its cache outside the model; it's created with KV caching off.
+    /// Llama keeps its cache outside the model; created with KV caching off.
     Llama { model: llama::Llama, cache: llama::Cache },
 }
 
@@ -64,12 +63,13 @@ impl CandleEngine {
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&weights, dtype, &device)? };
 
         let model = match kind {
-            ModelKind::Qwen2 => {
-                let cfg: qwen2::Config = serde_json::from_str(&config_str)?;
-                Model::Qwen2(qwen2::ModelForCausalLM::new(&cfg, vb)?)
+            ModelKind::Qwen3 => {
+                let cfg: qwen3::Config = serde_json::from_str(&config_str)?;
+                Model::Qwen3(qwen3::ModelForCausalLM::new(&cfg, vb)?)
             }
             ModelKind::Mistral => {
                 let cfg: mistral::Config = serde_json::from_str(&config_str)?;
+                Model::Mistral(mistral::Model::new(&cfg, vb)?)
             }
             ModelKind::Llama => {
                 let raw: llama::LlamaConfig = serde_json::from_str(&config_str)?;
@@ -109,7 +109,7 @@ impl LogitBackend for CandleEngine {
 
         let logits = match &mut self.model {
             // Stateful models: drop anything left from the previous request.
-            Model::Qwen2(m) => {
+            Model::Qwen3(m) => {
                 m.clear_kv_cache();
                 m.forward(&input, 0)?
             }
@@ -120,8 +120,7 @@ impl LogitBackend for CandleEngine {
             Model::Llama { model, cache } => model.forward(&input, 0, cache)?,
         };
 
-        // All three heads already return only the last position
-        // ([1, 1, vocab] or [1, vocab]), so flatten instead of indexing seq_len - 1.
+        // All three heads return only the last position ([1, 1, vocab] or [1, vocab]).
         let logits = logits.flatten_all()?.to_dtype(DType::F32)?.to_vec1::<f32>()?;
         Ok(logits)
     }
@@ -137,16 +136,19 @@ fn detect_kind(config: &serde_json::Value) -> Result<ModelKind> {
         .and_then(|v| v.as_str())
         .context("config.json has no `model_type` field")?;
     match model_type {
-        "qwen2" => Ok(ModelKind::Qwen2),
+        "qwen3" => Ok(ModelKind::Qwen3),
         "llama" => Ok(ModelKind::Llama),
         "mistral" => Ok(ModelKind::Mistral),
-        other => bail!("unsupported model_type '{other}' (supported: qwen2, llama, mistral)"),
+        other => bail!("unsupported model_type '{other}' (supported: qwen3, llama, mistral)"),
     }
 }
 
 /// `model.safetensors`, else the shards listed in the index, else every
 /// `*.safetensors` except Mistral's duplicate `consolidated` file.
 fn collect_safetensors(dir: &Path) -> Result<Vec<PathBuf>> {
+    let single = dir.join("model.safetensors");
+    if single.exists() {
+        return Ok(vec![single]);
     }
 
     let index = dir.join("model.safetensors.index.json");
@@ -183,4 +185,4 @@ fn collect_safetensors(dir: &Path) -> Result<Vec<PathBuf>> {
         bail!("no .safetensors files found in {}", dir.display());
     }
     Ok(files)
-}
+    }
