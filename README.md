@@ -259,7 +259,6 @@ Kronos can load single or multi-shard `.safetensors` model weights using Candle'
 Kronos is designed to use supported Candle hardware backends:
 
 * CUDA
-* Metal
 * CPU
 
 Actual precision and backend support depend on the selected model, device, and runtime configuration.
