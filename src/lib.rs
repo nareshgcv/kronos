@@ -1,7 +1,8 @@
 //! Kronos: a zero-generation decision runtime.
 //!
-//! One prefill pass over the prompt, then a temperature-scaled softmax over the
-//! logits of a fixed set of single-token choices. No autoregressive decoding.
+//! Incoming payload -> Schema Mapper -> Candle single prefill pass ->
+//! candidate logit extraction -> temperature-scaled softmax ->
+//! structured decision + confidence -> downstream action (route / allow / block).
 
 pub mod config;
 pub mod engine;
@@ -12,21 +13,19 @@ pub mod utils;
 pub use config::{select_best_device, KronosConfig, PromptFormat};
 pub use engine::candle_backend::{CandleEngine, ModelKind};
 pub use engine::logit_extractor::{Distribution, LogitExtractor};
-pub use engine::{ChoiceProbability, Decision, DecisionRequest, KronosError, KronosResult, LogitBackend};
+pub use engine::{
+    Action, ChoiceProbability, Decision, DecisionRequest, KronosError, KronosResult, LogitBackend,
+};
 pub use tokenizer::{ResolvedChoice, SchemaMapper, SpacePolicy, TokenizerManager};
-pub use utils::metrics::{LatencySnapshot, LatencyStats, LatencyTimer};
+pub use utils::metrics::LatencyTimer;
 
 use anyhow::Result;
 use candle_core::Device;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-/// Embedded, in-process Kronos API.
-///
-/// Cheap to clone and safe to share across threads. Forward passes are
-/// serialized per instance because the model keeps a KV cache; tokenization
-/// and choice resolution run outside the lock. `evaluate` blocks the calling
-/// thread, so from async code call it inside `tokio::task::spawn_blocking`.
+/// Embedded, in-process Kronos. Cheap to clone and safe to share across threads.
+/// `evaluate` blocks, so from async code call it inside `spawn_blocking`.
 #[derive(Clone)]
 pub struct EmbeddedKronos {
     inner: Arc<Inner>,
@@ -35,7 +34,6 @@ pub struct EmbeddedKronos {
 struct Inner {
     engine: Mutex<CandleEngine>,
     tokenizer: TokenizerManager,
-    stats: LatencyStats,
     model_kind: ModelKind,
     device_label: String,
     default_temperature: f32,
@@ -78,7 +76,6 @@ impl EmbeddedKronos {
             inner: Arc::new(Inner {
                 engine: Mutex::new(engine),
                 tokenizer,
-                stats: LatencyStats::new(),
                 model_kind,
                 device_label,
                 default_temperature: config.default_temperature,
@@ -88,31 +85,21 @@ impl EmbeddedKronos {
         })
     }
 
-    /// Convenience wrapper: default temperature, no confidence threshold.
+    /// Convenience wrapper with the default temperature.
     pub fn decide(&self, prompt: &str, choices: &[&str]) -> KronosResult<Decision> {
         self.evaluate(&DecisionRequest {
             prompt: prompt.to_owned(),
             choices: choices.iter().map(|c| (*c).to_owned()).collect(),
             temperature: None,
-            min_confidence: None,
         })
     }
 
-    /// Runs one decision: resolve choices -> single prefill -> constrained softmax.
+    /// Runs the full pipeline for one request.
     pub fn evaluate(&self, req: &DecisionRequest) -> KronosResult<Decision> {
         let timer = LatencyTimer::start();
-        let result = self.evaluate_inner(req, &timer);
-        match &result {
-            Ok(_) => self.inner.stats.record(timer.elapsed_us()),
-            Err(_) => self.inner.stats.record_error(),
-        }
-        result
-    }
-
-    fn evaluate_inner(&self, req: &DecisionRequest, timer: &LatencyTimer) -> KronosResult<Decision> {
         let inner = &self.inner;
 
-        // 1. Validate request
+        // Incoming payload / prompt
         if req.prompt.trim().is_empty() {
             return Err(KronosError::InvalidRequest("prompt must not be empty".into()));
         }
@@ -129,21 +116,12 @@ impl EmbeddedKronos {
                 "temperature must be a finite value > 0".into(),
             ));
         }
-        if let Some(m) = req.min_confidence {
-            if !(0.0..=1.0).contains(&m) {
-                return Err(KronosError::InvalidRequest(
-                    "min_confidence must be between 0 and 1".into(),
-                ));
-            }
-        }
 
-        // 2. Resolve choices to single token IDs (cached, outside the engine lock)
-        let resolved = inner
+        // 1. Schema Mapper: choices -> single token IDs, prompt -> template + tokens
+        let candidates = inner
             .tokenizer
             .resolve_choices(&req.choices)
             .map_err(|e| KronosError::Schema(format!("{e:#}")))?;
-
-        // 3. Render chat template + tokenize prompt (outside the engine lock)
         let input_ids = inner
             .tokenizer
             .encode_prompt(&req.prompt, &req.choices)
@@ -156,42 +134,30 @@ impl EmbeddedKronos {
             )));
         }
 
-        // 4. Single prefill pass; the lock is held only for this statement
+        // 2. Candle engine: single prefill pass (lock held only for this call)
         let logits = self
             .lock_engine()
             .next_token_logits(&input_ids)
             .map_err(|e| KronosError::Inference(format!("{e:#}")))?;
 
-        // 5. Constrained softmax over the candidate tokens
-        let dist = LogitExtractor::compute(&logits, &resolved, temperature)
+        // 3 + 4. Candidate logit extraction + temperature-scaled softmax
+        let dist = LogitExtractor::compute(&logits, &candidates, temperature)
             .map_err(|e| KronosError::Inference(format!("{e:#}")))?;
 
+        // 5. Structured decision + confidence
         let selected_choice = dist.choices[dist.best].choice.clone();
         let confidence = dist.choices[dist.best].probability;
+
+        // 6. Downstream execution: route / allow / block
+        let action = Action::from_choice(&selected_choice);
 
         Ok(Decision {
             selected_choice,
             confidence,
-            choice_mass: dist.choice_mass,
-            abstained: req.min_confidence.is_some_and(|m| confidence < m),
+            action,
             probabilities: dist.choices,
-            prompt_tokens: input_ids.len(),
             latency_us: timer.elapsed_us(),
         })
-    }
-
-    /// Runs one throwaway forward pass so kernels/shaders are compiled before traffic.
-    pub fn warmup(&self) -> Result<()> {
-        let ids = self
-            .inner
-            .tokenizer
-            .encode_prompt("warmup", &["yes".to_owned(), "no".to_owned()])?;
-        self.lock_engine().next_token_logits(&ids)?;
-        Ok(())
-    }
-
-    pub fn stats(&self) -> LatencySnapshot {
-        self.inner.stats.snapshot()
     }
 
     pub fn model_kind(&self) -> ModelKind {
@@ -207,8 +173,8 @@ impl EmbeddedKronos {
     }
 
     fn lock_engine(&self) -> MutexGuard<'_, CandleEngine> {
-        // A panic mid-forward poisons the mutex. The KV cache is cleared at the
-        // start of every pass, so recovering the guard is safe.
+        // The KV cache is cleared at the start of every pass, so a poisoned
+        // guard from an earlier panic is safe to reuse.
         self.inner
             .engine
             .lock()
