@@ -13,9 +13,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Candle (Hugging Face pure-Rust ML)
-candle-core = "0.8"
-candle-nn = "0.8"
-candle-transformers = "0.8"
+# 0.9 adds `models::qwen3`.
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
 
 # Tokenizer & serialization
 tokenizers = "0.20"
