@@ -35,6 +35,18 @@ impl FromStr for PromptFormat {
 
 #[derive(Debug, Clone)]
 pub struct KronosConfig {
+    /// Local directory with config.json, tokenizer.json and *.safetensors.
+    pub model_dir: PathBuf,
+    pub http_addr: SocketAddr,
+    pub use_ipc: bool,
+    pub ipc_socket_path: PathBuf,
+    /// `None` = pick from the model's `model_type`.
+    pub prompt_format: Option<PromptFormat>,
+    pub system_prompt: String,
+    /// Append "Allowed answers: ..." to the user turn (chat formats only).
+    pub append_choices_to_prompt: bool,
+    pub default_temperature: f32,
+    pub max_prompt_tokens: usize,
     pub max_choices: usize,
     /// Max HTTP body / IPC line size in bytes.
     pub max_request_bytes: usize,
@@ -74,6 +86,18 @@ impl KronosConfig {
         if let Some(v) = env_var::<PromptFormat>("KRONOS_PROMPT_FORMAT")? { c.prompt_format = Some(v); }
         if let Some(v) = env_var::<String>("KRONOS_SYSTEM_PROMPT")? { c.system_prompt = v; }
         if let Some(v) = env_bool("KRONOS_APPEND_CHOICES")? { c.append_choices_to_prompt = v; }
+        if let Some(v) = env_var::<f32>("KRONOS_TEMPERATURE")? { c.default_temperature = v; }
+        if let Some(v) = env_var::<usize>("KRONOS_MAX_PROMPT_TOKENS")? { c.max_prompt_tokens = v; }
+        if let Some(v) = env_var::<usize>("KRONOS_MAX_CHOICES")? { c.max_choices = v; }
+        if let Some(v) = env_var::<usize>("KRONOS_MAX_REQUEST_BYTES")? { c.max_request_bytes = v; }
+        if let Some(v) = env_var::<usize>("KRONOS_MAX_QUEUED")? { c.max_queued_requests = v; }
+        if let Some(v) = env_bool("KRONOS_WARMUP")? { c.warmup = v; }
+        Ok(c)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if !self.model_dir.is_dir() {
+            bail!("model_dir {} does not exist or is not a directory", self.model_dir.display());
         }
         if !self.default_temperature.is_finite() || self.default_temperature <= 0.0 {
             bail!("default_temperature must be a finite value > 0");
@@ -92,7 +116,7 @@ impl KronosConfig {
         }
         Ok(())
     }
-
+}
 
 /// CUDA, then Metal, then CPU. Only succeeds for backends compiled in via features.
 pub fn select_best_device() -> Device {
