@@ -1,8 +1,4 @@
-//! Unix-socket IPC server: newline-delimited JSON.
-//!
-//! One JSON request per line, one JSON reply per line. Requests on the same
-//! connection are answered in order. This is a local socket, not shared memory;
-//! it avoids TCP/HTTP overhead but still serializes JSON.
+//! Unix-socket ingress: newline-delimited JSON, one request and one reply per line.
 
 use crate::engine::{Decision, DecisionRequest};
 use crate::EmbeddedKronos;
@@ -14,7 +10,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Semaphore;
 
 #[derive(Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -35,16 +30,14 @@ impl IpcReply {
 pub struct IpcServer {
     socket_path: PathBuf,
     kronos: EmbeddedKronos,
-    queue: Arc<Semaphore>,
     max_line_bytes: usize,
 }
 
 impl IpcServer {
-    pub fn new(socket_path: PathBuf, kronos: EmbeddedKronos, queue: Arc<Semaphore>, max_line_bytes: usize) -> Self {
+    pub fn new(socket_path: PathBuf, kronos: EmbeddedKronos, max_line_bytes: usize) -> Self {
         Self {
             socket_path,
             kronos,
-            queue,
             max_line_bytes,
         }
     }
@@ -80,7 +73,6 @@ impl IpcServer {
 
         loop {
             buf.clear();
-            // Bounded read: a client can't make us buffer an unbounded line.
             let n = (&mut reader).take(limit).read_until(b'\n', &mut buf).await?;
             if n == 0 {
                 return Ok(());
@@ -107,18 +99,9 @@ impl IpcServer {
             Ok(r) => r,
             Err(e) => return IpcReply::error("invalid_request", format!("invalid JSON: {e}")),
         };
-        let permit = match Arc::clone(&self.queue).try_acquire_owned() {
-            Ok(p) => p,
-            Err(_) => return IpcReply::error("busy", "server busy, retry later"),
-        };
         let kronos = self.kronos.clone();
 
-        match tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            kronos.evaluate(&req)
-        })
-        .await
-        {
+        match tokio::task::spawn_blocking(move || kronos.evaluate(&req)).await {
             Ok(Ok(decision)) => IpcReply::Ok { decision },
             Ok(Err(e)) => IpcReply::error(e.kind(), e.to_string()),
             Err(e) => IpcReply::error("inference_error", format!("worker task failed: {e}")),
