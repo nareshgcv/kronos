@@ -180,4 +180,4 @@ impl EmbeddedKronos {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
-}
+    }
