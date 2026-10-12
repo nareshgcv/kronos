@@ -1,8 +1,6 @@
 use anyhow::Result;
 use kronos::server::http::{create_router, AppState};
 use kronos::{EmbeddedKronos, KronosConfig};
-use std::sync::Arc;
-use tokio::sync::Semaphore;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -24,20 +22,7 @@ async fn main() -> Result<()> {
         let cfg = config.clone();
         tokio::task::spawn_blocking(move || EmbeddedKronos::from_config(&cfg)).await??
     };
-    info!(
-        model = ?kronos.model_kind(),
-        device = kronos.device_label(),
-        prompt_format = ?kronos.prompt_format(),
-        "model loaded"
-    );
-
-    if config.warmup {
-        let k = kronos.clone();
-        tokio::task::spawn_blocking(move || k.warmup()).await??;
-        info!("warmup pass complete");
-    }
-
-    let queue = Arc::new(Semaphore::new(config.max_queued_requests));
+    info!(model = ?kronos.model_kind(), device = kronos.device_label(), "model loaded");
 
     #[cfg(unix)]
     {
@@ -45,7 +30,6 @@ async fn main() -> Result<()> {
             let ipc = kronos::server::ipc::IpcServer::new(
                 config.ipc_socket_path.clone(),
                 kronos.clone(),
-                Arc::clone(&queue),
                 config.max_request_bytes,
             );
             tokio::spawn(async move {
@@ -56,7 +40,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let app = create_router(AppState { kronos, queue }, config.max_request_bytes);
+    let app = create_router(AppState { kronos }, config.max_request_bytes);
     let listener = tokio::net::TcpListener::bind(config.http_addr).await?;
     info!("HTTP listening on http://{}", config.http_addr);
 
