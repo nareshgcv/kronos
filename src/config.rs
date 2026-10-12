@@ -11,8 +11,10 @@ use std::str::FromStr;
 pub enum PromptFormat {
     /// Fed to the model as-is (base models or your own template).
     Raw,
-    /// Qwen / ChatML: `<|im_start|>role ... <|im_end|>`
+    /// ChatML: `<|im_start|>role ... <|im_end|>`
     ChatMl,
+    /// Qwen3: ChatML with an empty `<think>` block (non-thinking mode) so the answer is the next token.
+    Qwen3,
     /// Llama 3 instruct headers.
     Llama3,
     /// Mistral instruct: `[INST] ... [/INST]`
@@ -25,10 +27,11 @@ impl FromStr for PromptFormat {
     fn from_str(s: &str) -> Result<Self> {
         match s.to_ascii_lowercase().as_str() {
             "raw" => Ok(Self::Raw),
-            "chatml" | "qwen" | "qwen2" => Ok(Self::ChatMl),
+            "chatml" => Ok(Self::ChatMl),
+            "qwen3" => Ok(Self::Qwen3),
             "llama3" => Ok(Self::Llama3),
             "mistral" => Ok(Self::Mistral),
-            other => bail!("unknown prompt format '{other}' (raw | chatml | llama3 | mistral)"),
+            other => bail!("unknown prompt format '{other}' (raw | chatml | qwen3 | llama3 | mistral)"),
         }
     }
 }
@@ -50,15 +53,12 @@ pub struct KronosConfig {
     pub max_choices: usize,
     /// Max HTTP body / IPC line size in bytes.
     pub max_request_bytes: usize,
-    /// Requests allowed in flight or queued before returning "busy".
-    pub max_queued_requests: usize,
-    pub warmup: bool,
 }
 
 impl Default for KronosConfig {
     fn default() -> Self {
         Self {
-            model_dir: PathBuf::from("./models/qwen2.5-0.5b-instruct"),
+            model_dir: PathBuf::from("./models/Qwen3-0.6B"),
             http_addr: SocketAddr::from(([127, 0, 0, 1], 3000)),
             use_ipc: cfg!(unix),
             ipc_socket_path: PathBuf::from("/tmp/kronos.sock"),
@@ -69,8 +69,6 @@ impl Default for KronosConfig {
             max_prompt_tokens: 4096,
             max_choices: 64,
             max_request_bytes: 64 * 1024,
-            max_queued_requests: 64,
-            warmup: true,
         }
     }
 }
@@ -90,8 +88,6 @@ impl KronosConfig {
         if let Some(v) = env_var::<usize>("KRONOS_MAX_PROMPT_TOKENS")? { c.max_prompt_tokens = v; }
         if let Some(v) = env_var::<usize>("KRONOS_MAX_CHOICES")? { c.max_choices = v; }
         if let Some(v) = env_var::<usize>("KRONOS_MAX_REQUEST_BYTES")? { c.max_request_bytes = v; }
-        if let Some(v) = env_var::<usize>("KRONOS_MAX_QUEUED")? { c.max_queued_requests = v; }
-        if let Some(v) = env_bool("KRONOS_WARMUP")? { c.warmup = v; }
         Ok(c)
     }
 
@@ -110,9 +106,6 @@ impl KronosConfig {
         }
         if self.max_request_bytes < 1024 {
             bail!("max_request_bytes must be at least 1024");
-        }
-        if self.max_queued_requests == 0 {
-            bail!("max_queued_requests must be > 0");
         }
         Ok(())
     }
@@ -166,4 +159,5 @@ fn env_bool(key: &str) -> Result<Option<bool>> {
             _ => bail!("{key}={v:?}: expected true/false"),
         },
     }
+             
 }
