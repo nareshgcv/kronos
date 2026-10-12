@@ -1,153 +1,165 @@
-//! Tokenizer manager: chat templating, prompt encoding, cached choice resolution.
+//! Schema Mapper: maps a choice schema to single, distinct vocabulary token IDs.
 
-pub mod schema_mapper;
-
-pub use schema_mapper::{ResolvedChoice, SchemaMapper, SpacePolicy};
-
-use crate::config::PromptFormat;
 use anyhow::{anyhow, bail, Result};
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::{HashMap, HashSet};
 use tokenizers::Tokenizer;
 
-const CHOICE_CACHE_CAPACITY: usize = 1024;
-
-type ChoiceCache = HashMap<Vec<String>, Arc<Vec<ResolvedChoice>>>;
-
-pub struct TokenizerManager {
-    tokenizer: Tokenizer,
-    format: PromptFormat,
-    system_prompt: String,
-    append_choices: bool,
-    choice_cache: Mutex<ChoiceCache>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedChoice {
+    pub choice: String,
+    pub token_id: u32,
 }
 
-impl TokenizerManager {
-    pub fn load(model_dir: &Path, format: PromptFormat, system_prompt: String, append_choices: bool) -> Result<Self> {
-        let path = model_dir.join("tokenizer.json");
-        let tokenizer = Tokenizer::from_file(&path)
-            .map_err(|e| anyhow!("loading {}: {e}", path.display()))?;
-        Ok(Self {
-            tokenizer,
-            format,
-            system_prompt,
-            append_choices,
-            choice_cache: Mutex::new(HashMap::new()),
-        })
+/// Which spelling to try first. The same spelling is used for every choice so
+/// that no choice gets an unfair head start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpacePolicy {
+    PreferNoSpace,
+    PreferLeadingSpace,
+}
+
+pub struct SchemaMapper;
+
+impl SchemaMapper {
+    pub fn resolve_choices(tokenizer: &Tokenizer, choices: &[String], policy: SpacePolicy) -> Result<Vec<ResolvedChoice>> {
+        Self::resolve_with(
+            |text: &str| {
+                tokenizer
+                    .encode(text, false)
+                    .map(|e| e.get_ids().to_vec())
+                    .map_err(|e| anyhow!("tokenization failed for {text:?}: {e}"))
+            },
+            choices,
+            policy,
+        )
     }
 
-    pub fn tokenizer(&self) -> &Tokenizer {
-        &self.tokenizer
-    }
-
-    /// Resolves the choice set to single, distinct token IDs. Results are cached
-    /// per choice set because decision schemas repeat across requests.
-    pub fn resolve_choices(&self, choices: &[String]) -> Result<Arc<Vec<ResolvedChoice>>> {
-        if let Some(hit) = self.cache().get(choices) {
-            return Ok(Arc::clone(hit));
+    /// Tokenizer-agnostic core, so it can be unit-tested with a fake encoder.
+    pub fn resolve_with<F>(encode: F, choices: &[String], policy: SpacePolicy) -> Result<Vec<ResolvedChoice>>
+    where
+        F: Fn(&str) -> Result<Vec<u32>>,
+    {
+        if choices.is_empty() {
+            bail!("no choices provided");
         }
-
+        let mut seen = HashSet::new();
         for c in choices {
-            self.reject_control_markers(c, "choice")?;
+            if c.trim().is_empty() {
+                bail!("choices must not be empty or whitespace");
+            }
+            if !seen.insert(c.as_str()) {
+                bail!("duplicate choice '{c}'");
+            }
         }
 
-        // In chat templates the answer starts right after a newline, so the
-        // bare token is what the model emits. In raw prompts it usually follows
-        // a word or colon, so the space-prefixed token is the likelier one.
-        let policy = match self.format {
-            PromptFormat::Raw => SpacePolicy::PreferLeadingSpace,
-            _ => SpacePolicy::PreferNoSpace,
+        let order = match policy {
+            SpacePolicy::PreferNoSpace => [false, true],
+            SpacePolicy::PreferLeadingSpace => [true, false],
         };
-        let resolved = Arc::new(SchemaMapper::resolve_choices(&self.tokenizer, choices, policy)?);
 
-        let mut cache = self.cache();
-        if cache.len() >= CHOICE_CACHE_CAPACITY {
-            cache.clear();
+        let mut failures = Vec::with_capacity(2);
+        for leading_space in order {
+            match Self::try_variant(&encode, choices, leading_space) {
+                Ok(resolved) => return Ok(resolved),
+                Err(e) => failures.push(format!(
+                    "{}: {e}",
+                    if leading_space { "with leading space" } else { "as written" }
+                )),
+            }
         }
-        cache.insert(choices.to_vec(), Arc::clone(&resolved));
+        bail!(
+            "each choice must map to exactly one distinct token, spelled consistently. {}",
+            failures.join("; ")
+        )
+    }
+
+    fn try_variant<F>(encode: &F, choices: &[String], leading_space: bool) -> Result<Vec<ResolvedChoice>>
+    where
+        F: Fn(&str) -> Result<Vec<u32>>,
+    {
+        let mut resolved = Vec::with_capacity(choices.len());
+        let mut by_id: HashMap<u32, &str> = HashMap::new();
+        let mut multi_token = Vec::new();
+
+        for choice in choices {
+            let text = if leading_space {
+                format!(" {choice}")
+            } else {
+                choice.clone()
+            };
+            let ids = encode(&text)?;
+            if ids.len() != 1 {
+                multi_token.push(format!("'{choice}' is {} tokens", ids.len()));
+                continue;
+            }
+            let id = ids[0];
+            if let Some(other) = by_id.insert(id, choice.as_str()) {
+                bail!("'{other}' and '{choice}' share token id {id}");
+            }
+            resolved.push(ResolvedChoice {
+                choice: choice.clone(),
+                token_id: id,
+            });
+        }
+
+        if !multi_token.is_empty() {
+            bail!("{}", multi_token.join(", "));
+        }
         Ok(resolved)
     }
+}
 
-    /// Wraps the prompt in the model's chat template and tokenizes it.
-    pub fn encode_prompt(&self, prompt: &str, choices: &[String]) -> Result<Vec<u32>> {
-        self.reject_control_markers(prompt, "prompt")?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let user = if self.append_choices && self.format != PromptFormat::Raw {
-            format!(
-                "{prompt}\n\nAllowed answers: {}\nReply with exactly one allowed answer.",
-                choices.join(", ")
-            )
-        } else {
-            prompt.to_owned()
-        };
-
-        let (text, add_special_tokens) = self.render(&user);
-        let encoding = self
-            .tokenizer
-            .encode(text, add_special_tokens)
-            .map_err(|e| anyhow!("prompt encoding failed: {e}"))?;
-        Ok(encoding.get_ids().to_vec())
-    }
-
-    fn render(&self, user: &str) -> (String, bool) {
-        let sys = self.system_prompt.trim();
-        match self.format {
-            PromptFormat::Raw => (user.to_owned(), true),
-            PromptFormat::ChatMl => {
-                let mut s = String::new();
-                if !sys.is_empty() {
-                    s.push_str(&format!("<|im_start|>system\n{sys}<|im_end|>\n"));
-                }
-                s.push_str(&format!("<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"));
-                (s, false)
-            }
-            PromptFormat::Llama3 => {
-                let mut s = String::from("<|begin_of_text|>");
-                if !sys.is_empty() {
-                    s.push_str(&format!(
-                        "<|start_header_id|>system<|end_header_id|>\n\n{sys}<|eot_id|>"
-                    ));
-                }
-                s.push_str(&format!(
-                    "<|start_header_id|>user<|end_header_id|>\n\n{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-                ));
-                (s, false)
-            }
-            PromptFormat::Mistral => {
-                let body = if sys.is_empty() {
-                    user.to_owned()
-                } else {
-                    format!("{sys}\n\n{user}")
-                };
-                (format!("<s>[INST] {body} [/INST]"), false)
-            }
+    fn fake(vocab: &'static [(&'static str, u32)]) -> impl Fn(&str) -> Result<Vec<u32>> {
+        move |text: &str| {
+            Ok(match vocab.iter().find(|(t, _)| *t == text) {
+                Some((_, id)) => vec![*id],
+                None => vec![900, 901], // anything unknown is "two tokens"
+            })
         }
     }
 
-    /// Blocks template injection: user text must not contain the template's
-    /// control tokens, or it could close the user turn and forge an answer.
-    fn reject_control_markers(&self, text: &str, what: &str) -> Result<()> {
-        let markers: &[&str] = match self.format {
-            PromptFormat::Raw => &[],
-            PromptFormat::ChatMl => &["<|im_start|>", "<|im_end|>", "<|endoftext|>"],
-            PromptFormat::Llama3 => &[
-                "<|begin_of_text|>",
-                "<|start_header_id|>",
-                "<|end_header_id|>",
-                "<|eot_id|>",
-            ],
-            PromptFormat::Mistral => &["[INST]", "[/INST]", "<s>", "</s>"],
-        };
-        if let Some(m) = markers.iter().find(|m| text.contains(**m)) {
-            bail!("{what} contains reserved template token {m}");
-        }
-        Ok(())
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| (*x).to_owned()).collect()
     }
 
-    fn cache(&self) -> MutexGuard<'_, ChoiceCache> {
-        self.choice_cache
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    #[test]
+    fn prefers_bare_spelling() {
+        let enc = fake(&[("yes", 1), ("no", 2), (" yes", 3), (" no", 4)]);
+        let r = SchemaMapper::resolve_with(enc, &s(&["yes", "no"]), SpacePolicy::PreferNoSpace).unwrap();
+        assert_eq!(r.iter().map(|c| c.token_id).collect::<Vec<_>>(), vec![1, 2]);
+    }
+
+    #[test]
+    fn falls_back_consistently() {
+        // "no" has no bare single token, so *both* choices switch to spaced.
+        let enc = fake(&[("yes", 1), (" yes", 3), (" no", 4)]);
+        let r = SchemaMapper::resolve_with(enc, &s(&["yes", "no"]), SpacePolicy::PreferNoSpace).unwrap();
+        assert_eq!(r.iter().map(|c| c.token_id).collect::<Vec<_>>(), vec![3, 4]);
+    }
+
+    #[test]
+    fn rejects_multi_token_choice() {
+        let enc = fake(&[("yes", 1), (" yes", 3)]);
+        let err = SchemaMapper::resolve_with(enc, &s(&["yes", "SPAWN_HEALTH"]), SpacePolicy::PreferNoSpace)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("SPAWN_HEALTH"));
+    }
+
+    #[test]
+    fn rejects_token_collision() {
+        let enc = fake(&[("a", 1), ("b", 1), (" a", 2), (" b", 2)]);
+        assert!(SchemaMapper::resolve_with(enc, &s(&["a", "b"]), SpacePolicy::PreferNoSpace).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicates_and_blanks() {
+        let enc = fake(&[("a", 1)]);
+        assert!(SchemaMapper::resolve_with(&enc, &s(&["a", "a"]), SpacePolicy::PreferNoSpace).is_err());
+        assert!(SchemaMapper::resolve_with(&enc, &s(&["a", " "]), SpacePolicy::PreferNoSpace).is_err());
     }
 }
