@@ -244,7 +244,7 @@ Kronos is designed to support multiple open-weight model architectures through d
 
 Current architecture targets include:
 
-* Qwen2
+* Qwen3
 * Llama 3
 * Mistral
 
