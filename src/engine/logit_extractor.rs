@@ -10,14 +10,16 @@ pub struct Distribution {
     pub choices: Vec<ChoiceProbability>,
     /// Index of the highest-probability choice (first one wins ties).
     pub best: usize,
-    /// Full-vocab probability mass on the candidates at T = 1.
-    pub choice_mass: f32,
 }
 
 pub struct LogitExtractor;
 
 impl LogitExtractor {
-    pub fn compute(logits: &[f32], candidates: &[ResolvedChoice], temperature: f32) -> Result<Distribution> {
+    pub fn compute(
+        logits: &[f32],
+        candidates: &[ResolvedChoice],
+        temperature: f32,
+    ) -> Result<Distribution> {
         if candidates.is_empty() {
             bail!("no candidate choices");
         }
@@ -25,6 +27,7 @@ impl LogitExtractor {
             bail!("temperature must be a finite value > 0");
         }
 
+        // Candidate logit extraction
         let mut raw = Vec::with_capacity(candidates.len());
         for c in candidates {
             let Some(&logit) = logits.get(c.token_id as usize) else {
@@ -41,10 +44,9 @@ impl LogitExtractor {
             raw.push(logit);
         }
 
+        // Temperature-scaled softmax over the candidates only
         let scaled: Vec<f32> = raw.iter().map(|l| l / temperature).collect();
         let probs = softmax(&scaled);
-
-        let choice_mass = (log_sum_exp(&raw) - log_sum_exp(logits)).exp().clamp(0.0, 1.0);
 
         let mut best = 0;
         for (i, p) in probs.iter().enumerate() {
@@ -64,11 +66,7 @@ impl LogitExtractor {
             })
             .collect();
 
-        Ok(Distribution {
-            choices,
-            best,
-            choice_mass,
-        })
+        Ok(Distribution { choices, best })
     }
 }
 
@@ -78,24 +76,6 @@ fn softmax(xs: &[f32]) -> Vec<f32> {
     let exps: Vec<f64> = xs.iter().map(|&x| ((x - max) as f64).exp()).collect();
     let sum: f64 = exps.iter().sum();
     exps.iter().map(|e| (e / sum) as f32).collect()
-}
-
-/// log(sum(exp(x))) over finite values; -inf if there are none.
-fn log_sum_exp(xs: &[f32]) -> f32 {
-    let max = xs
-        .iter()
-        .copied()
-        .filter(|x| x.is_finite())
-        .fold(f32::NEG_INFINITY, f32::max);
-    if !max.is_finite() {
-        return f32::NEG_INFINITY;
-    }
-    let sum: f64 = xs
-        .iter()
-        .filter(|x| x.is_finite())
-        .map(|&x| ((x - max) as f64).exp())
-        .sum();
-    max + sum.ln() as f32
 }
 
 #[cfg(test)]
@@ -138,15 +118,5 @@ mod tests {
         let cands = [rc("a", 0), rc("b", 1)];
         assert!(LogitExtractor::compute(&[0.0, 1.0], &cands, 0.0).is_err());
         assert!(LogitExtractor::compute(&[0.0, 1.0], &cands, f32::NAN).is_err());
-    }
-
-    #[test]
-    fn choice_mass_tracks_full_vocab() {
-        // Model strongly prefers token 0, which isn't a candidate.
-        let logits = [10.0, 0.0, 0.0];
-        let off = LogitExtractor::compute(&logits, &[rc("a", 1), rc("b", 2)], 1.0).unwrap();
-        assert!(off.choice_mass < 0.01);
-        let on = LogitExtractor::compute(&logits, &[rc("x", 0), rc("a", 1)], 1.0).unwrap();
-        assert!(on.choice_mass > 0.99);
     }
 }
