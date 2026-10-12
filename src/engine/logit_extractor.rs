@@ -35,6 +35,85 @@ impl LogitExtractor {
                     logits.len()
                 );
             };
+            if !logit.is_finite() {
+                bail!("non-finite logit for '{}'", c.choice);
+            }
+            raw.push(logit);
+        }
+
+        let scaled: Vec<f32> = raw.iter().map(|l| l / temperature).collect();
+        let probs = softmax(&scaled);
+
+        let choice_mass = (log_sum_exp(&raw) - log_sum_exp(logits)).exp().clamp(0.0, 1.0);
+
+        let mut best = 0;
+        for (i, p) in probs.iter().enumerate() {
+            if *p > probs[best] {
+                best = i;
+            }
+        }
+
+        let choices = candidates
+            .iter()
+            .zip(raw.iter().zip(probs.iter()))
+            .map(|(c, (&logit, &probability))| ChoiceProbability {
+                choice: c.choice.clone(),
+                token_id: c.token_id,
+                logit,
+                probability,
+            })
+            .collect();
+
+        Ok(Distribution {
+            choices,
+            best,
+            choice_mass,
+        })
+    }
+}
+
+/// Numerically stable softmax (accumulates in f64).
+fn softmax(xs: &[f32]) -> Vec<f32> {
+    let max = xs.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f64> = xs.iter().map(|&x| ((x - max) as f64).exp()).collect();
+    let sum: f64 = exps.iter().sum();
+    exps.iter().map(|e| (e / sum) as f32).collect()
+}
+
+/// log(sum(exp(x))) over finite values; -inf if there are none.
+fn log_sum_exp(xs: &[f32]) -> f32 {
+    let max = xs
+        .iter()
+        .copied()
+        .filter(|x| x.is_finite())
+        .fold(f32::NEG_INFINITY, f32::max);
+    if !max.is_finite() {
+        return f32::NEG_INFINITY;
+    }
+    let sum: f64 = xs
+        .iter()
+        .filter(|x| x.is_finite())
+        .map(|&x| ((x - max) as f64).exp())
+        .sum();
+    max + sum.ln() as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rc(choice: &str, token_id: u32) -> ResolvedChoice {
+        ResolvedChoice {
+            choice: choice.into(),
+            token_id,
+        }
+    }
+
+    #[test]
+    fn sums_to_one_and_picks_argmax() {
+        let logits = [0.0, 2.0, 1.0, -1.0];
+        let d = LogitExtractor::compute(&logits, &[rc("a", 1), rc("b", 2), rc("c", 3)], 1.0).unwrap();
+        let sum: f32 = d.choices.iter().map(|c| c.probability).sum();
         assert!((sum - 1.0).abs() < 1e-5);
         assert_eq!(d.best, 0);
         assert_eq!(d.choices[0].choice, "a");
