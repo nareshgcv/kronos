@@ -97,11 +97,10 @@ Kronos evaluates a predefined set of candidate choices.
 For example:
 
 ```rust
-let schema = Schema::choices(&[
-    "APPROVE",
-    "REJECT",
-    "HALT",
-]);
+let decision = kronos.decide(
+    "Is this transaction safe to process?",
+    &["APPROVE", "REJECT", "HALT"],
+)?;
 ```
 
 Conceptually, the model produces logits such as:
