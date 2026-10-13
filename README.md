@@ -735,57 +735,42 @@ A typical Kronos deployment can expose three layers:
 
 ## Requirements
 
-* Rust 1.75+
-* Local Hugging Face model directory
-* `config.json`
-* `tokenizer.json`
-* `.safetensors` model weights
-* Supported CPU, CUDA, or Metal environment
+* Recent stable Rust
+* A local Hugging Face model directory containing:
+  * `config.json`
+  * `tokenizer.json`
+  * `.safetensors` weights (single file or sharded)
+* CPU (default), or CUDA / Metal when built with the matching feature
 
-> The actual minimum Rust version depends on the current dependency set and should be verified against the project's `Cargo.lock` and CI configuration.
+## Run the Server
 
----
+```bash
+cargo run --release -- ./models/Qwen3-0.6B
 
-## Initialize the Engine
-
-```rust
-use kronos_core::KronosEngine;
-
-let engine = KronosEngine::init()?;
+# With GPU acceleration
+cargo run --release --features cuda -- ./models/Qwen3-0.6B
 ```
 
----
+By default the HTTP server listens on `127.0.0.1:3000`. On Unix, the socket server also starts at `/tmp/kronos.sock`. Settings can be changed with `KRONOS_*` environment variables (for example `KRONOS_HTTP_ADDR`, `KRONOS_TEMPERATURE`, `KRONOS_IPC`).
 
-## Define a Decision Schema
-
-```rust
-use kronos_core::Schema;
-
-let schema = Schema::choices(&[
-    "APPROVE",
-    "REJECT",
-    "HALT",
-]);
-```
-
----
-
-## Evaluate
+## Use as a Library
 
 ```rust
-let result = engine.evaluate(
+use kronos::EmbeddedKronos;
+
+let kronos = EmbeddedKronos::new("./models/Qwen3-0.6B")?;
+
+let decision = kronos.decide(
     "Market volatility: high. Order size: 50,000 USD.",
-    &schema,
+    &["APPROVE", "REJECT", "HALT"],
 )?;
 
-println!("{:?}", result);
+println!("{:?}", decision);
 ```
 
 ---
 
 # 🌐 API Example
-
-A REST request can conceptually look like:
 
 ```http
 POST /v1/decision
@@ -795,24 +780,34 @@ Content-Type: application/json
 ```json
 {
   "prompt": "Market volatility: high. Order size: 50,000 USD.",
-  "choices": [
-    "APPROVE",
-    "REJECT",
-    "HALT"
-  ]
+  "choices": ["APPROVE", "REJECT", "HALT"],
+  "temperature": 1.0
 }
 ```
 
-Example structured response:
+`temperature` is optional; the configured default is used if omitted.
+
+Example response:
 
 ```json
 {
-  "decision": "HALT",
-  "confidence": 0.91
+  "selected_choice": "HALT",
+  "confidence": 0.91,
+  "action": { "type": "route", "target": "HALT" },
+  "probabilities": [
+    { "choice": "APPROVE", "token_id": 0, "logit": 1.12, "probability": 0.04 },
+    { "choice": "REJECT",  "token_id": 0, "logit": 1.30, "probability": 0.05 },
+    { "choice": "HALT",    "token_id": 0, "logit": 4.18, "probability": 0.91 }
+  ],
+  "latency_us": 18250
 }
 ```
 
-The exact response schema is subject to the current Kronos API implementation.
+Token IDs and latency are illustrative. Errors return HTTP 400 or 500 with:
+
+```json
+{ "error": "schema violation: ...", "kind": "schema_violation" }
+```
 
 ---
 
