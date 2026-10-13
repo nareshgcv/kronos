@@ -212,17 +212,25 @@ Therefore, the strongest Kronos performance claims apply to **schema choices tha
 
 ## 🎯 Deterministic Output Space
 
-The application defines the valid decision space before inference.
+The application defines the valid decision space before inference by passing a list of `choices` with each request.
 
 ```text
-Schema
+choices
   │
-  ├── APPROVE
-  ├── REJECT
-  └── HALT
+  ├── allow    → action: allow   (reserved)
+  ├── block    → action: block   (reserved)
+  └── billing  → action: route { target: "billing" }
 ```
 
-Kronos selects from that predefined space rather than allowing arbitrary generated text.
+Kronos selects from that predefined list rather than allowing arbitrary generated text.
+
+**Choice rules**
+
+* `allow` and `block` (any case) are reserved and map directly to allow / block actions.
+* Every other choice becomes a `route` action, with the choice name as the target.
+* Each request needs between 2 and `max_choices` choices (default 64).
+* Choices must be unique and non-empty.
+* Each choice must map to exactly one distinct token in the model's vocabulary. Multi-token choices are rejected with a schema error, so test custom labels against your model's tokenizer.
 
 This provides **structural output constraints**, not guaranteed semantic correctness.
 
@@ -256,28 +264,44 @@ Kronos can load single or multi-shard `.safetensors` model weights using Candle'
 
 ## 🖥️ Hardware Acceleration
 
-Kronos is designed to use supported Candle hardware backends:
+Kronos supports the following Candle backends, enabled through Cargo features:
 
-* CUDA
-* CPU
+* CUDA (`--features cuda`)
+* Metal (`--features metal`)
+* CPU (default)
 
-Actual precision and backend support depend on the selected model, device, and runtime configuration.
+At startup, Kronos picks the best compiled-in device in the order CUDA, Metal, CPU. It uses F32 on CPU and BF16 on accelerators.
 
 ## 🌐 Multiple Interfaces
 
 ### Embedded Rust API
 
-Kronos can run directly inside a Rust application:
+Kronos can run directly inside a Rust application through `EmbeddedKronos`:
 
 ```rust
-let decision = engine.evaluate(
-    prompt,
-    &schema,
+let kronos = EmbeddedKronos::new("./models/Qwen3-0.6B")?;
+
+let decision = kronos.decide(
+    "Customer asks for a refund on order #4821",
+    &["allow", "block", "billing"],
 )?;
+
+println!("{} ({:.2})", decision.selected_choice, decision.confidence);
 ```
 
-This avoids network overhead and is intended for latency-sensitive applications.
+For per-request temperature, use `evaluate` with a `DecisionRequest`:
 
+```rust
+let decision = kronos.evaluate(&DecisionRequest {
+    prompt: "Customer asks for a refund on order #4821".into(),
+    choices: vec!["allow".into(), "block".into(), "billing".into()],
+    temperature: Some(0.7),
+})?;
+```
+
+`evaluate` is blocking. From async code, call it inside `tokio::task::spawn_blocking`.
+
+This avoids network overhead and is intended for latency-sensitive applications.
 ### REST API
 
 An Axum-based HTTP interface provides endpoints such as:
