@@ -156,23 +156,17 @@ Therefore, **schema compliance and semantic accuracy are separate properties**.
 
 # ⚠️ Schema & Tokenizer Considerations
 
-Kronos's lowest-latency decision path is optimized for choices that can be resolved directly to vocabulary token IDs.
+Kronos currently supports **single-token choices only**.
 
-For example:
+Each choice must map to exactly one distinct token in the selected model's vocabulary. Kronos first tries every choice as written, then every choice with a leading space. The same spelling is used for all choices so none gets an unfair advantage.
 
-```text
-APPROVE
-REJECT
-HALT
-SAFE
-UNSAFE
-```
+A request is rejected with a schema error if:
 
-This works particularly well when each candidate maps cleanly to the expected token representation.
+* any choice tokenizes to more than one token
+* two choices map to the same token
+* choices are duplicated or empty
 
-However, natural language choices are not always represented by a single token.
-
-For example:
+Natural-language choices such as:
 
 ```text
 "approve transaction"
@@ -180,21 +174,15 @@ For example:
 "requires human review"
 ```
 
-may be represented by multiple sub-word tokens depending on the model tokenizer.
+usually span multiple tokens and are **not supported** in the current version.
 
-In these cases, direct single-token logit extraction is insufficient by itself.
+Whether a label is a single token depends on the tokenizer. Uppercase labels like `APPROVE` may be split into several tokens by some models, so test custom labels against your model before deploying.
 
-Supporting multi-token choices may require additional techniques such as:
+### Roadmap
 
-* Token alignment
-* Candidate scoring across multiple tokens
-* Prompt framing
-* Constrained decoding
-* Sequence-level probability calculations
+Multi-token choice support (for example, sequence-level scoring across a candidate's tokens) is under consideration. It would carry different latency characteristics from the single-token path.
 
-These approaches may have different latency characteristics from the core single-token path.
-
-Therefore, the strongest Kronos performance claims apply to **schema choices that can be resolved efficiently by the selected model/tokenizer**.
+All Kronos performance claims apply to the single-token path.
 
 ---
 
