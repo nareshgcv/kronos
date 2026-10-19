@@ -1,0 +1,235 @@
+{
+  "task": "trade_risk",
+  "instruction": "Decide what to do with a proposed trade, using the pre-checked risk facts given.",
+  "labels": [
+    {
+      "label": "approve",
+      "definition": "within the risk limit, normal volatility and a verified counterparty"
+    },
+    {
+      "label": "reject",
+      "definition": "the order exceeds the account's risk limit"
+    },
+    {
+      "label": "review",
+      "definition": "within the limit, but volatility is high or the counterparty is not verified"
+    }
+  ],
+  "examples": [
+    {
+      "input": "Order: buy 200 TCS shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve"
+    },
+    {
+      "input": "Order: buy $50,000 of NIFTY futures. Exceeds risk limit: yes. Volatility: high. Counterparty verified: yes.",
+      "label": "reject"
+    },
+    {
+      "input": "Order: sell 1,000 Reliance shares. Exceeds risk limit: no. Volatility: high. Counterparty verified: yes.",
+      "label": "review"
+    }
+  ],
+  "cases": [
+    {
+      "id": "trade_risk-001",
+      "input": "Order: buy 50 Infosys shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-002",
+      "input": "Order: sell 300 HDFC Bank shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-003",
+      "input": "Order: buy $5,000 of gold ETF. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-004",
+      "input": "Order: buy 10 Apple shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-005",
+      "input": "Order: sell $12,000 of US treasury ETF. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-006",
+      "input": "Order: buy 75 Wipro shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-007",
+      "input": "Order: buy $50,000 of tech stocks. Exceeds risk limit: yes. Volatility: normal. Counterparty verified: yes.",
+      "label": "reject",
+      "split": "test",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-008",
+      "input": "Order: sell 20,000 Tata Motors shares. Exceeds risk limit: yes. Volatility: high. Counterparty verified: yes.",
+      "label": "reject",
+      "split": "test",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-009",
+      "input": "Order: buy $80,000 of crypto. Exceeds risk limit: yes. Volatility: high. Counterparty verified: no.",
+      "label": "reject",
+      "split": "test",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-010",
+      "input": "Order: buy 5,000 SBI shares. Exceeds risk limit: yes. Volatility: normal. Counterparty verified: yes.",
+      "label": "reject",
+      "split": "test",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-011",
+      "input": "Order: sell $200,000 of bonds. Exceeds risk limit: yes. Volatility: normal. Counterparty verified: no.",
+      "label": "reject",
+      "split": "test",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-012",
+      "input": "Order: buy 40 lots of BANKNIFTY options. Exceeds risk limit: yes. Volatility: high. Counterparty verified: yes.",
+      "label": "reject",
+      "split": "test",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-013",
+      "input": "Order: buy 100 Adani Ports shares. Exceeds risk limit: no. Volatility: high. Counterparty verified: yes.",
+      "label": "review",
+      "split": "test",
+      "tags": [
+        "volatility"
+      ]
+    },
+    {
+      "id": "trade_risk-014",
+      "input": "Order: sell $8,000 of oil futures. Exceeds risk limit: no. Volatility: high. Counterparty verified: yes.",
+      "label": "review",
+      "split": "test",
+      "tags": [
+        "volatility"
+      ]
+    },
+    {
+      "id": "trade_risk-015",
+      "input": "Order: buy $3,000 of a small-cap fund. Exceeds risk limit: no. Volatility: normal. Counterparty verified: no.",
+      "label": "review",
+      "split": "test",
+      "tags": [
+        "counterparty"
+      ]
+    },
+    {
+      "id": "trade_risk-016",
+      "input": "Order: sell 500 Zomato shares. Exceeds risk limit: no. Volatility: high. Counterparty verified: no.",
+      "label": "review",
+      "split": "test",
+      "tags": [
+        "volatility",
+        "counterparty"
+      ]
+    },
+    {
+      "id": "trade_risk-017",
+      "input": "Order: buy $15,000 of EUR/USD. Exceeds risk limit: no. Volatility: normal. Counterparty verified: no.",
+      "label": "review",
+      "split": "test",
+      "tags": [
+        "counterparty"
+      ]
+    },
+    {
+      "id": "trade_risk-018",
+      "input": "Order: buy 60 Tesla shares. Exceeds risk limit: no. Volatility: high. Counterparty verified: yes.",
+      "label": "review",
+      "split": "test",
+      "tags": [
+        "volatility"
+      ]
+    },
+    {
+      "id": "trade_risk-cal-001",
+      "input": "Order: buy 25 ITC shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "trade_risk-cal-002",
+      "input": "Order: buy $45,000 of NIFTY futures. Exceeds risk limit: yes. Volatility: normal. Counterparty verified: yes.",
+      "label": "reject",
+      "split": "calibration",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-cal-003",
+      "input": "Order: sell 2 lots of crude options. Exceeds risk limit: no. Volatility: high. Counterparty verified: yes.",
+      "label": "review",
+      "split": "calibration",
+      "tags": [
+        "volatility"
+      ]
+    },
+    {
+      "id": "trade_risk-cal-004",
+      "input": "Order: buy $1,000 of an index fund. Exceeds risk limit: no. Volatility: normal. Counterparty verified: no.",
+      "label": "review",
+      "split": "calibration",
+      "tags": [
+        "counterparty"
+      ]
+    },
+    {
+      "id": "trade_risk-cal-005",
+      "input": "Order: sell $90,000 of shares. Exceeds risk limit: yes. Volatility: high. Counterparty verified: no.",
+      "label": "reject",
+      "split": "calibration",
+      "tags": [
+        "over-limit"
+      ]
+    },
+    {
+      "id": "trade_risk-cal-006",
+      "input": "Order: buy 30 Maruti shares. Exceeds risk limit: no. Volatility: normal. Counterparty verified: yes.",
+      "label": "approve",
+      "split": "calibration",
+      "tags": []
+    }
+  ]
+}
