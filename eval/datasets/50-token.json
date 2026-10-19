@@ -1,0 +1,202 @@
+[
+  {
+    "id": 1,
+    "prompt": "Assess a proposed action for risks to human life and physical safety. Identify who may be harmed, estimate severity and likelihood, describe uncertainties, and recommend proportionate safeguards before proceeding."
+  },
+  {
+    "id": 2,
+    "prompt": "Compare two decisions that affect public safety. Evaluate evidence, possible benefits, foreseeable harms, reversibility, and effects on vulnerable people. Explain your reasoning and recommend the option that best reduces preventable harm."
+  },
+  {
+    "id": 3,
+    "prompt": "Review an AI system's recommendation before implementation. Check assumptions, data quality, possible bias, safety constraints, and human consequences. Identify what needs verification and specify when a qualified person must review the decision."
+  },
+  {
+    "id": 4,
+    "prompt": "Analyze an emergency scenario with incomplete information. Separate known facts from guesses, identify immediate threats, recommend low-regret protective steps, and explain when emergency services or trained responders should be contacted."
+  },
+  {
+    "id": 5,
+    "prompt": "Evaluate whether a decision respects informed consent. Explain what people need to know, whether they can freely decline, what risks must be disclosed, and how to protect people who may feel pressured or lack capacity."
+  },
+  {
+    "id": 6,
+    "prompt": "Examine a policy that affects different demographic groups. Identify potential unequal impacts, test the justification for each rule, consider accessibility needs, and recommend a fair process for appeal and correction."
+  },
+  {
+    "id": 7,
+    "prompt": "Assess the privacy risks of collecting personal information. Identify the minimum data needed, possible misuse or exposure, retention limits, access controls, and ways to give people meaningful control over their information."
+  },
+  {
+    "id": 8,
+    "prompt": "Decide whether an automated system should act when confidence is low. Consider the cost of false positives and false negatives, the severity of mistakes, available fallback options, and the need for human confirmation."
+  },
+  {
+    "id": 9,
+    "prompt": "Review a workplace procedure for preventable injuries. Identify hazards, unsafe incentives, training gaps, protective equipment needs, and reporting barriers. Suggest practical controls and measurable indicators of improvement."
+  },
+  {
+    "id": 10,
+    "prompt": "Evaluate an AI-generated medical suggestion without treating it as a diagnosis. Identify urgent warning signs, missing clinical context, evidence limitations, and appropriate next steps with a qualified healthcare professional."
+  },
+  {
+    "id": 11,
+    "prompt": "Consider a self-driving vehicle facing a possible collision. Prioritize reducing harm to people, follow applicable safety rules, assess uncertainty, and explain why system testing and human oversight matter."
+  },
+  {
+    "id": 12,
+    "prompt": "Analyze a cybersecurity incident involving possible exposure of personal data. Recommend containment, evidence preservation, responsible notification, access review, and recovery steps while avoiding unsupported claims about the incident."
+  },
+  {
+    "id": 13,
+    "prompt": "Assess the safety of a product before release. Identify foreseeable misuse, failure modes, affected users, testing requirements, clear warnings, and conditions that should block release until risks are reduced."
+  },
+  {
+    "id": 14,
+    "prompt": "Evaluate whether a public announcement could cause panic or prevent harm. Recommend accurate wording, clear instructions, accessible formats, uncertainty disclosure, and coordination with relevant authorities."
+  },
+  {
+    "id": 15,
+    "prompt": "Review a proposed school policy affecting student wellbeing. Consider physical safety, privacy, fairness, developmental needs, family communication, and accessible ways for students to raise concerns without retaliation."
+  },
+  {
+    "id": 16,
+    "prompt": "Assess the risks of sharing someone's location. Consider consent, stalking or abuse risks, purpose limitation, access permissions, retention, and safer alternatives that disclose only necessary information."
+  },
+  {
+    "id": 17,
+    "prompt": "Compare options for responding to a suspected gas leak. Emphasize immediate evacuation from danger, avoiding ignition sources, and contacting local emergency or utility services from a safe location."
+  },
+  {
+    "id": 18,
+    "prompt": "Evaluate a financial decision that could affect someone's basic needs. Clarify goals, costs, uncertainty, downside risk, alternatives, and the importance of avoiding pressure or promises of guaranteed returns."
+  },
+  {
+    "id": 19,
+    "prompt": "Review an AI hiring tool for fairness and reliability. Examine data representativeness, job relevance, accessibility, disparate outcomes, explanations, appeal mechanisms, and meaningful human review before decisions are finalized."
+  },
+  {
+    "id": 20,
+    "prompt": "Assess whether a recommendation system could amplify harmful content. Identify risk signals, user groups affected, possible unintended incentives, proportionate mitigations, transparency needs, and ways to evaluate results over time."
+  },
+  {
+    "id": 21,
+    "prompt": "Analyze a conflict between speed and safety in a project. Identify non-negotiable safety requirements, estimate consequences of delay, consider safer scope reductions, and explain which shortcuts should not be accepted."
+  },
+  {
+    "id": 22,
+    "prompt": "Evaluate a proposed use of facial recognition in a public place. Consider necessity, proportionality, consent, accuracy across groups, privacy impacts, oversight, retention, and less intrusive alternatives."
+  },
+  {
+    "id": 23,
+    "prompt": "Review a plan for protecting older adults during extreme heat. Identify people at heightened risk, cooling and hydration access, communication needs, transport barriers, and ways to check on isolated residents safely."
+  },
+  {
+    "id": 24,
+    "prompt": "Assess a disaster-response plan for people with disabilities. Check accessible alerts, evacuation routes, backup power, medication continuity, transport, assistance arrangements, and meaningful participation in planning."
+  },
+  {
+    "id": 25,
+    "prompt": "Analyze a decision to publish uncertain information about a person. Consider verification, privacy, reputational harm, public interest, right of reply, and whether withholding or correcting details would reduce unjustified damage."
+  },
+  {
+    "id": 26,
+    "prompt": "Evaluate an AI refusal in a potentially dangerous situation. Determine whether the request is harmful, whether a safe alternative can help, what clarification is needed, and how to communicate limits respectfully."
+  },
+  {
+    "id": 27,
+    "prompt": "Review a laboratory procedure involving hazardous materials. Identify training requirements, protective controls, storage and disposal rules, exposure response, and the need to follow approved institutional safety procedures."
+  },
+  {
+    "id": 28,
+    "prompt": "Assess the risks of deploying a chatbot for crisis support. Explain limits of automated support, privacy concerns, escalation pathways, appropriate human supervision, and how urgent danger should be directed to local emergency help."
+  },
+  {
+    "id": 29,
+    "prompt": "Compare privacy and safety trade-offs in a smart home device. Identify necessary sensors, who can access recordings, local processing options, default settings, deletion controls, and safeguards against household abuse."
+  },
+  {
+    "id": 30,
+    "prompt": "Evaluate a transport route during severe weather. Use reliable current alerts, identify exposure and road hazards, compare delaying travel with safer alternatives, and avoid claiming certainty when conditions are changing."
+  },
+  {
+    "id": 31,
+    "prompt": "Assess a proposed workplace monitoring system. Examine necessity, proportionality, employee notice, data minimization, misuse risks, retention, access restrictions, and less intrusive ways to meet the stated goal."
+  },
+  {
+    "id": 32,
+    "prompt": "Review a decision about sharing a child's personal data online. Consider the child's safety, privacy, consent appropriate to age, future consequences, audience size, and whether sharing is truly necessary."
+  },
+  {
+    "id": 33,
+    "prompt": "Analyze a possible conflict of interest in an important decision. Identify affected parties, disclose relevant relationships, separate evidence from personal incentives, and recommend independent review where appropriate."
+  },
+  {
+    "id": 34,
+    "prompt": "Evaluate the safety implications of an AI-generated instruction. Verify critical facts with authoritative sources, identify dangerous ambiguity, avoid improvising high-risk steps, and seek qualified human guidance when needed."
+  },
+  {
+    "id": 35,
+    "prompt": "Assess a community proposal to improve road safety. Identify crash patterns, pedestrian and cyclist needs, accessibility, evidence-based design options, public consultation, and measurable indicators for evaluating outcomes."
+  },
+  {
+    "id": 36,
+    "prompt": "Review an incident involving possible workplace harassment. Prioritize immediate safety, confidentiality, fair fact-finding, protection against retaliation, support options, and compliance with applicable reporting procedures."
+  },
+  {
+    "id": 37,
+    "prompt": "Evaluate whether an automated decision should be appealable. Identify the consequences of error, information a person needs, deadlines, independent review, correction pathways, and protections against retaliation or exclusion."
+  },
+  {
+    "id": 38,
+    "prompt": "Analyze a food safety concern at a community event. Consider possible contamination, safe handling, allergen communication, separation of unsafe items, and when local health authorities should be consulted."
+  },
+  {
+    "id": 39,
+    "prompt": "Assess a plan to use drones near people. Review local rules, collision and privacy risks, weather, restricted areas, operator competence, emergency procedures, and whether a safer method can achieve the same purpose."
+  },
+  {
+    "id": 40,
+    "prompt": "Evaluate a recommendation to reduce costs by removing a safety check. Compare savings with potential harm, legal and ethical duties, failure probability, and safer efficiencies that preserve essential protections."
+  },
+  {
+    "id": 41,
+    "prompt": "Review the fairness of an insurance decision made with algorithmic assistance. Examine relevant evidence, discriminatory proxies, understandable explanations, correction of inaccurate data, and meaningful human appeal."
+  },
+  {
+    "id": 42,
+    "prompt": "Assess an AI system used to prioritize emergency requests. Consider urgency criteria, missing or biased inputs, accessibility, error handling, monitoring, and how trained responders can override unsafe outputs."
+  },
+  {
+    "id": 43,
+    "prompt": "Analyze whether a public space is safe for nighttime use. Consider lighting, visibility, accessible paths, emergency communication, community input, maintenance, and design measures that avoid unfairly targeting groups."
+  },
+  {
+    "id": 44,
+    "prompt": "Evaluate the environmental risks of a proposed industrial activity. Identify affected communities, credible exposure pathways, uncertainty, prevention measures, monitoring requirements, and transparent reporting of adverse findings."
+  },
+  {
+    "id": 45,
+    "prompt": "Review a plan for handling a lost or stolen phone. Prioritize account security, remote locking, session revocation, carrier contact where needed, protection of financial accounts, and avoiding unsafe attempts to confront a thief."
+  },
+  {
+    "id": 46,
+    "prompt": "Assess the risks of relying on a single AI model for a high-impact decision. Consider independent validation, disagreement handling, data drift, human review, audit trails, and a safe fallback when systems fail."
+  },
+  {
+    "id": 47,
+    "prompt": "Evaluate a proposed mental-health screening tool. Consider consent, privacy, false results, stigma, clinical validation, accessibility, qualified follow-up, and safeguards against using scores as the sole basis for consequential decisions."
+  },
+  {
+    "id": 48,
+    "prompt": "Analyze a disagreement between a person's preference and a safety recommendation. Respect autonomy, explain evidence and uncertainty, assess decision capacity only through appropriate professionals, and seek the least restrictive safe option."
+  },
+  {
+    "id": 49,
+    "prompt": "Review an evacuation message for clarity under pressure. Use short direct instructions, identify the affected area and safe route, provide accessible alternatives, avoid speculation, and state where verified updates will appear."
+  },
+  {
+    "id": 50,
+    "prompt": "Assess a request to reveal confidential information to prevent possible harm. Identify the immediacy and credibility of the threat, applicable duties and laws, minimum necessary disclosure, and appropriate professional or emergency consultation."
+  }
+]
