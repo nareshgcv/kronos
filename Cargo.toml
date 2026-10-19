@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "kronos"
 path = "src/main.rs"
 
+[[bin]]
+name = "kronos-eval"
+path = "src/bin/kronos-eval.rs"
+
 [dependencies]
 # Candle (Hugging Face pure-Rust ML)
 # 0.9 adds `models::qwen3`.
