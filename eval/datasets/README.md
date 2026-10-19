@@ -24,6 +24,22 @@ Then make two small edits:
 
 Cargo picks up `src/bin/kronos-eval.rs` automatically.
 
+The harness writes the label list into every prompt itself, so it loads Kronos
+with `append_choices_to_prompt` turned off to avoid listing the labels twice.
+
+## Speed: `benches/latency.rs`
+
+The latency benchmark cycles through every prompt in `eval/datasets/`:
+
+```bash
+KRONOS_MODEL_DIR=./models/Qwen3-0.6B cargo bench --bench latency
+KRONOS_BENCH_ITERS=2000 KRONOS_MODEL_DIR=./models/Qwen3-0.6B cargo bench --bench latency
+```
+
+It runs each prompt once untimed (dropping any whose labels are rejected),
+does 20 warmup passes, then reports mean, p50, p95, p99, p99.9, max and
+throughput, overall and per dataset.
+
 ## Datasets
 
 | File | Labels | Test cases | Calibration |
@@ -80,9 +96,6 @@ Run the same datasets three times with `--style bare`, `--style defined` and
 - **Errors (no decision)**: usually a label that is not a single token for
   this model. The first error message is shown; rename the label in the
   dataset (and its examples) and rerun.
-- **Mean choice mass**: low values mean the model wanted to answer with
-  something other than the labels, which points to a prompt problem rather
-  than a model-judgment problem.
 - **Mean confidence, correct vs wrong**: if wrong answers are as confident as
   right ones, confidence cannot be used to catch mistakes.
 - **Abstention thresholds**: pick a threshold on the calibration split, then
