@@ -1,0 +1,264 @@
+{
+  "task": "routing",
+  "instruction": "You route customer support messages to the team that should handle them.",
+  "labels": [
+    {
+      "label": "billing",
+      "definition": "charges, invoices, refunds, payment methods, subscription price"
+    },
+    {
+      "label": "technical",
+      "definition": "app or website errors, crashes, bugs, login failures caused by the system"
+    },
+    {
+      "label": "account",
+      "definition": "profile details, password resets, email changes, opening or closing an account"
+    },
+    {
+      "label": "sales",
+      "definition": "people who want to buy, upgrade, or get pricing for a new plan"
+    }
+  ],
+  "examples": [
+    {
+      "input": "I was charged twice for March.",
+      "label": "billing"
+    },
+    {
+      "input": "The app freezes when I open the camera tab.",
+      "label": "technical"
+    },
+    {
+      "input": "How do I change the email on my profile?",
+      "label": "account"
+    },
+    {
+      "input": "Do you offer discounts for teams of 50?",
+      "label": "sales"
+    }
+  ],
+  "cases": [
+    {
+      "id": "routing-001",
+      "input": "I want my money back for the order that never arrived.",
+      "label": "billing",
+      "split": "test",
+      "tags": [
+        "refund"
+      ]
+    },
+    {
+      "id": "routing-002",
+      "input": "Why is there a $9.99 charge I don't recognize?",
+      "label": "billing",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-003",
+      "input": "Please update the credit card used for my subscription.",
+      "label": "billing",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-004",
+      "input": "My invoice shows the wrong company name and VAT number.",
+      "label": "billing",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-005",
+      "input": "You charged me after I cancelled. Not happy.",
+      "label": "billing",
+      "split": "test",
+      "tags": [
+        "negative-tone"
+      ]
+    },
+    {
+      "id": "routing-006",
+      "input": "Can I get a refund instead of store credit?",
+      "label": "billing",
+      "split": "test",
+      "tags": [
+        "refund"
+      ]
+    },
+    {
+      "id": "routing-007",
+      "input": "The checkout page shows a 500 error every time.",
+      "label": "technical",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-008",
+      "input": "Push notifications stopped working after the last update.",
+      "label": "technical",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-009",
+      "input": "Your site won't load on Safari, just a blank page.",
+      "label": "technical",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-010",
+      "input": "The export button does nothing when I click it.",
+      "label": "technical",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-011",
+      "input": "Sync between my phone and laptop has been broken for two days.",
+      "label": "technical",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-012",
+      "input": "I get 'unexpected error' when uploading a PDF.",
+      "label": "technical",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-013",
+      "input": "I forgot my password and the reset link expired.",
+      "label": "account",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-014",
+      "input": "Please delete my account and all my data.",
+      "label": "account",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-015",
+      "input": "How do I add a second user to my profile?",
+      "label": "account",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-016",
+      "input": "I need to change my username.",
+      "label": "account",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-017",
+      "input": "Can you merge my two accounts into one?",
+      "label": "account",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-018",
+      "input": "My name is misspelled on my profile, how do I fix it?",
+      "label": "account",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-019",
+      "input": "What does the enterprise plan cost for 200 seats?",
+      "label": "sales",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-020",
+      "input": "We're evaluating your product for our hospital. Can we book a demo?",
+      "label": "sales",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-021",
+      "input": "Is there an annual discount if I upgrade to Pro?",
+      "label": "sales",
+      "split": "test",
+      "tags": [
+        "upgrade"
+      ]
+    },
+    {
+      "id": "routing-022",
+      "input": "Do you sell a license for on-premise installation?",
+      "label": "sales",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-023",
+      "input": "I'd like to talk to someone about a partnership deal.",
+      "label": "sales",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-024",
+      "input": "Thinking of switching from your competitor. What would migration cost?",
+      "label": "sales",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "routing-cal-001",
+      "input": "The payment failed but money left my bank account.",
+      "label": "billing",
+      "split": "calibration",
+      "tags": [
+        "ambiguous"
+      ]
+    },
+    {
+      "id": "routing-cal-002",
+      "input": "Two-factor codes never arrive by SMS.",
+      "label": "technical",
+      "split": "calibration",
+      "tags": [
+        "ambiguous"
+      ]
+    },
+    {
+      "id": "routing-cal-003",
+      "input": "How do I transfer ownership of my account to a colleague?",
+      "label": "account",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "routing-cal-004",
+      "input": "Can we get a quote for a nonprofit license?",
+      "label": "sales",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "routing-cal-005",
+      "input": "Cancel my subscription and refund this month.",
+      "label": "billing",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "routing-cal-006",
+      "input": "The dashboard graphs only show yesterday's data.",
+      "label": "technical",
+      "split": "calibration",
+      "tags": []
+    }
+  ]
+}
