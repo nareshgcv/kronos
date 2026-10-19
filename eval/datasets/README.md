@@ -11,7 +11,7 @@ Copy these paths into the Kronos repository:
 ```text
 src/utils/eval_metrics.rs     metric functions + unit tests
 src/bin/kronos-eval.rs        the harness program
-eval/datasets/*.json          routing, guardrail, tool_selection
+eval/datasets/*.json          six labeled datasets (see below)
 eval/results/                 reports are written here
 ```
 
@@ -24,6 +24,20 @@ Then make two small edits:
 
 Cargo picks up `src/bin/kronos-eval.rs` automatically.
 
+## Datasets
+
+| File | Labels | Test cases | Calibration |
+|---|---|---|---|
+| `customer_support_routing.json` | billing, technical, account, sales | 32 | 6 |
+| `guardrail.json` | safe, unsafe | 24 | 6 |
+| `tool_selection.json` | math, search, database, none | 24 | 6 |
+| `agent_gating.json` | allow, block | 24 | 6 |
+| `sentiment.json` | positive, negative, neutral | 24 | 6 |
+| `trade_risk.json` | approve, reject, review | 18 | 6 |
+
+Trade-risk inputs carry pre-checked facts ("Exceeds risk limit: yes/no"), so the
+model judges the facts instead of doing arithmetic. Limit checks belong in code.
+
 ## Check the metric math
 
 ```bash
@@ -35,7 +49,7 @@ cargo test --lib eval_metrics
 ```bash
 cargo run --release --bin kronos-eval -- \
     --model ./models/Qwen3-0.6B \
-    --dataset eval/datasets/routing.json \
+    --dataset eval/datasets/customer_support_routing.json \
     --dataset eval/datasets/guardrail.json \
     --dataset eval/datasets/tool_selection.json \
     --style defined --order-check
@@ -48,7 +62,7 @@ Add `--features cuda` or `--features metal` for GPU runs.
 | `--style bare` | labels only |
 | `--style defined` | labels with one-line definitions (default) |
 | `--style fewshot` | definitions plus the dataset's examples |
-| `--split test` | the 24 test cases per dataset (default) |
+| `--split test` | the test cases (24–32 per dataset, default) |
 | `--split calibration` | the 6 held-out cases, for choosing a threshold |
 | `--order-check` | rerun with choices reversed and list answers that changed |
 | `--out DIR` | report directory (default `eval/results`) |
@@ -78,7 +92,7 @@ Run the same datasets three times with `--style bare`, `--style defined` and
 
 ```json
 {
-  "task": "routing",
+  "task": "customer_support_routing",
   "instruction": "One sentence describing the decision.",
   "labels": [{ "label": "billing", "definition": "charges, invoices, refunds" }],
   "examples": [{ "input": "I was charged twice.", "label": "billing" }],
