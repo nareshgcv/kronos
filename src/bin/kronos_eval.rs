@@ -14,7 +14,7 @@ use kronos::utils::eval_metrics::{
     threshold_sweep, Outcome,
 };
 use kronos::utils::metrics::percentile;
-use kronos::{DecisionRequest, EmbeddedKronos};
+use kronos::{DecisionRequest, EmbeddedKronos, KronosConfig};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt::Write as _;
@@ -255,7 +255,6 @@ struct CaseResult {
     tags: Vec<String>,
     predicted: Option<String>,
     confidence: f64,
-    choice_mass: Option<f64>,
     latency_us: u64,
     error: Option<String>,
 }
@@ -275,7 +274,6 @@ fn request(ds: &Dataset, choices: &[String], style: Style, input: &str) -> Decis
         prompt: build_prompt(ds, choices, style, input),
         choices: choices.to_vec(),
         temperature: None,
-        min_confidence: None,
     }
 }
 
@@ -299,7 +297,6 @@ fn run_pass(
             tags: case.tags.clone(),
             predicted: None,
             confidence: 0.0,
-            choice_mass: None,
             latency_us,
             error: None,
         };
@@ -307,7 +304,6 @@ fn run_pass(
             Ok(d) => CaseResult {
                 predicted: Some(d.selected_choice.to_string()),
                 confidence: d.confidence as f64,
-                choice_mass: Some(d.choice_mass as f64),
                 ..base
             },
             Err(e) => CaseResult {
@@ -368,12 +364,6 @@ fn render_report(
     let (conf_right, conf_wrong) = mean_confidence_split(&outcomes);
 
     let errors: Vec<&CaseResult> = results.iter().filter(|r| r.error.is_some()).collect();
-    let masses: Vec<f64> = results.iter().filter_map(|r| r.choice_mass).collect();
-    let mean_mass = if masses.is_empty() {
-        None
-    } else {
-        Some(masses.iter().sum::<f64>() / masses.len() as f64)
-    };
     let mut lat: Vec<u64> = results.iter().map(|r| r.latency_us).collect();
     lat.sort_unstable();
     let ms = |us: u64| us as f64 / 1000.0;
@@ -399,7 +389,6 @@ fn render_report(
     let _ = writeln!(r, "| Macro F1 | {:.3} |", macro_f1(&stats));
     let _ = writeln!(r, "| Mean confidence, correct | {} |", opt3(conf_right));
     let _ = writeln!(r, "| Mean confidence, wrong | {} |", opt3(conf_wrong));
-    let _ = writeln!(r, "| Mean choice mass | {} |", opt3(mean_mass));
     let _ = writeln!(r, "| ECE ({CALIBRATION_BINS} bins) | {ece:.3} |");
     let _ = writeln!(
         r,
@@ -517,17 +506,16 @@ fn render_report(
     } else {
         let _ = writeln!(
             r,
-            "| Case | Correct | Kronos | Confidence | Choice mass | Tags |\n|---|---|---|---|---|---|"
+            "| Case | Correct | Kronos | Confidence | Tags |\n|---|---|---|---|---|"
         );
         for m in mistakes {
             let _ = writeln!(
                 r,
-                "| {} | {} | {} | {:.3} | {} | {} |",
+                "| {} | {} | {} | {:.3} | {} |",
                 m.id,
                 m.gold,
                 m.predicted.as_deref().unwrap_or(""),
                 m.confidence,
-                opt3(m.choice_mass),
                 m.tags.join(", ")
             );
         }
@@ -535,9 +523,9 @@ fn render_report(
 
     let _ = writeln!(
         r,
-        "\n---\nConfidence is relative to the allowed choices only. Choice mass is the share of \
-         the model's full next-token probability that fell on those choices: a low value means \
-         the model wanted to say something else, which usually points to a prompt problem."
+        "\n---\nConfidence is relative to the allowed choices only, so it is not a \
+         calibrated probability of being right. Check the calibration table before \
+         using it as a threshold."
     );
     r
 }
@@ -551,7 +539,6 @@ fn write_predictions(path: &Path, results: &[CaseResult]) -> Result<()> {
             "predicted": c.predicted,
             "correct": c.predicted.as_deref() == Some(c.gold.as_str()),
             "confidence": c.confidence,
-            "choice_mass": c.choice_mass,
             "latency_us": c.latency_us,
             "error": c.error,
             "tags": c.tags,
@@ -566,7 +553,14 @@ fn write_predictions(path: &Path, results: &[CaseResult]) -> Result<()> {
 
 fn main() -> Result<()> {
     let args = parse_args()?;
-    let kronos = EmbeddedKronos::new(args.model.as_str())?;
+    // The harness writes the label list into every prompt itself, so Kronos's own
+    // "append choices to prompt" option is turned off to avoid listing them twice.
+    let config = KronosConfig {
+        model_dir: PathBuf::from(&args.model),
+        append_choices_to_prompt: false,
+        ..KronosConfig::default()
+    };
+    let kronos = EmbeddedKronos::from_config(&config)?;
     let meta = RunMeta {
         model_dir: args.model.clone(),
         model_kind: format!("{:?}", kronos.model_kind()),
