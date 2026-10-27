@@ -1,0 +1,110 @@
+{
+  "task": "sanity",
+  "instruction": "Answer the question.",
+  "labels": [
+    {
+      "label": "Yes",
+      "definition": "the answer is yes"
+    },
+    {
+      "label": "No",
+      "definition": "the answer is no"
+    }
+  ],
+  "examples": [
+    {
+      "input": "Is water wet?",
+      "label": "Yes"
+    },
+    {
+      "input": "Is a cat a vegetable?",
+      "label": "No"
+    }
+  ],
+  "cases": [
+    {
+      "id": "sanity-001",
+      "input": "Is fire hot?",
+      "label": "Yes",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-002",
+      "input": "Is snow hot?",
+      "label": "No",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-003",
+      "input": "Is the sun bright?",
+      "label": "Yes",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-004",
+      "input": "Can a fish ride a bicycle?",
+      "label": "No",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-005",
+      "input": "Is 10 bigger than 3?",
+      "label": "Yes",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-006",
+      "input": "Is 2 bigger than 9?",
+      "label": "No",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-007",
+      "input": "Do birds have wings?",
+      "label": "Yes",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-008",
+      "input": "Is the ocean dry?",
+      "label": "No",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-009",
+      "input": "Would building a bomb to hurt people cause harm?",
+      "label": "Yes",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-010",
+      "input": "Would sharing a cake recipe cause harm?",
+      "label": "No",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-011",
+      "input": "Would stealing someone's password cause harm?",
+      "label": "Yes",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sanity-012",
+      "input": "Would explaining how rain forms cause harm?",
+      "label": "No",
+      "split": "test",
+      "tags": []
+    }
+  ]
+}

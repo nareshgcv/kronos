@@ -1,0 +1,256 @@
+{
+  "task": "tool_selection",
+  "instruction": "You choose which tool an assistant should use to answer the user's request.",
+  "labels": [
+    {
+      "label": "math",
+      "definition": "arithmetic, percentages, unit conversions or any calculation"
+    },
+    {
+      "label": "search",
+      "definition": "current events, facts about the world, or anything that needs the internet"
+    },
+    {
+      "label": "database",
+      "definition": "the user's own company records: orders, customers, invoices, inventory"
+    },
+    {
+      "label": "none",
+      "definition": "chit-chat, writing, opinions or explanations that need no tool"
+    }
+  ],
+  "examples": [
+    {
+      "input": "What is 15% of 240?",
+      "label": "math"
+    },
+    {
+      "input": "Who won yesterday's Formula 1 race?",
+      "label": "search"
+    },
+    {
+      "input": "How many orders did customer 4821 place this year?",
+      "label": "database"
+    },
+    {
+      "input": "Write a short thank-you note to my team.",
+      "label": "none"
+    }
+  ],
+  "cases": [
+    {
+      "id": "tool_selection-001",
+      "input": "What is 17.5% of 3,240?",
+      "label": "math",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-002",
+      "input": "Convert 72 degrees Fahrenheit to Celsius.",
+      "label": "math",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-003",
+      "input": "If I save $350 a month, how much do I have after 3 years?",
+      "label": "math",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-004",
+      "input": "What's 1,250 divided by 8?",
+      "label": "math",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-005",
+      "input": "Split a $186 dinner bill between 7 people.",
+      "label": "math",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-006",
+      "input": "How many seconds are in 3.5 hours?",
+      "label": "math",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-007",
+      "input": "What's the weather in Hyderabad tomorrow?",
+      "label": "search",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-008",
+      "input": "Latest news about the RBI interest rate decision?",
+      "label": "search",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-009",
+      "input": "Who is the current CEO of Infosys?",
+      "label": "search",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-010",
+      "input": "When does the next iPhone launch?",
+      "label": "search",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-011",
+      "input": "What are today's top stories in tech?",
+      "label": "search",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-012",
+      "input": "Is the airport in Vijayawada open after the storm?",
+      "label": "search",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-013",
+      "input": "List all unpaid invoices from September.",
+      "label": "database",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-014",
+      "input": "How much stock do we have of SKU A-1192?",
+      "label": "database",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-015",
+      "input": "Which customers haven't ordered in 90 days?",
+      "label": "database",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-016",
+      "input": "Show me order #77812's shipping status.",
+      "label": "database",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-017",
+      "input": "What was our total revenue last quarter by region?",
+      "label": "database",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-018",
+      "input": "Find the contact email for our customer Ravi Traders.",
+      "label": "database",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-019",
+      "input": "Write a haiku about the monsoon.",
+      "label": "none",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-020",
+      "input": "Explain recursion like I'm ten.",
+      "label": "none",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-021",
+      "input": "Give me feedback on this opening line: 'It was a quiet Tuesday.'",
+      "label": "none",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-022",
+      "input": "What's your favorite color?",
+      "label": "none",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-023",
+      "input": "Rewrite this sentence to sound more formal: 'we can't make it'.",
+      "label": "none",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-024",
+      "input": "Tell me a joke about programmers.",
+      "label": "none",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-cal-001",
+      "input": "What's 23 times 47?",
+      "label": "math",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-cal-002",
+      "input": "Who won the Nobel Prize in Physics this year?",
+      "label": "search",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-cal-003",
+      "input": "How many refunds did we issue last week?",
+      "label": "database",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-cal-004",
+      "input": "Summarize the plot of Hamlet in two lines.",
+      "label": "none",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "tool_selection-cal-005",
+      "input": "What's the exchange rate from USD to INR right now?",
+      "label": "search",
+      "split": "calibration",
+      "tags": [
+        "ambiguous"
+      ]
+    },
+    {
+      "id": "tool_selection-cal-006",
+      "input": "Calculate the average order value from our March orders.",
+      "label": "database",
+      "split": "calibration",
+      "tags": [
+        "ambiguous"
+      ]
+    }
+  ]
+}

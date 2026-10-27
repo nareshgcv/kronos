@@ -1,0 +1,266 @@
+{
+  "task": "sentiment",
+  "instruction": "Classify the overall sentiment of the text.",
+  "labels": [
+    {
+      "label": "positive",
+      "definition": "the writer is pleased, satisfied or enthusiastic overall"
+    },
+    {
+      "label": "negative",
+      "definition": "the writer is unhappy, frustrated or critical overall, including sarcasm that means the opposite of the literal words"
+    },
+    {
+      "label": "neutral",
+      "definition": "factual statements or questions with no clear feeling either way"
+    }
+  ],
+  "examples": [
+    {
+      "input": "Loved the food, will definitely come back.",
+      "label": "positive"
+    },
+    {
+      "input": "Oh great, my order is late again. Fantastic service.",
+      "label": "negative"
+    },
+    {
+      "input": "The store opens at 9am on weekdays.",
+      "label": "neutral"
+    }
+  ],
+  "cases": [
+    {
+      "id": "sentiment-001",
+      "input": "The new update is fast and the design is beautiful.",
+      "label": "positive",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-002",
+      "input": "Delivery arrived a day early and the packaging was perfect.",
+      "label": "positive",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-003",
+      "input": "Not the worst movie I've seen, honestly pretty good.",
+      "label": "positive",
+      "split": "test",
+      "tags": [
+        "negation"
+      ]
+    },
+    {
+      "id": "sentiment-004",
+      "input": "I can't complain, everything went smoothly.",
+      "label": "positive",
+      "split": "test",
+      "tags": [
+        "negation"
+      ]
+    },
+    {
+      "id": "sentiment-005",
+      "input": "The support agent solved my problem in five minutes. Impressed!",
+      "label": "positive",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-006",
+      "input": "Wasn't expecting much, but this phone exceeded every expectation.",
+      "label": "positive",
+      "split": "test",
+      "tags": [
+        "contrast"
+      ]
+    },
+    {
+      "id": "sentiment-007",
+      "input": "Absolutely love how simple the checkout is.",
+      "label": "positive",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-008",
+      "input": "The battery dies by noon. Useless.",
+      "label": "negative",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-009",
+      "input": "Wow, only three hours on hold. Truly world-class support.",
+      "label": "negative",
+      "split": "test",
+      "tags": [
+        "sarcasm"
+      ]
+    },
+    {
+      "id": "sentiment-010",
+      "input": "I've been charged twice and nobody replies to my emails.",
+      "label": "negative",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-011",
+      "input": "Great, another update that breaks everything.",
+      "label": "negative",
+      "split": "test",
+      "tags": [
+        "sarcasm"
+      ]
+    },
+    {
+      "id": "sentiment-012",
+      "input": "The food was not good at all.",
+      "label": "negative",
+      "split": "test",
+      "tags": [
+        "negation"
+      ]
+    },
+    {
+      "id": "sentiment-013",
+      "input": "Looked nice in the photos, but it fell apart in a week.",
+      "label": "negative",
+      "split": "test",
+      "tags": [
+        "contrast"
+      ]
+    },
+    {
+      "id": "sentiment-014",
+      "input": "Never buying from this brand again.",
+      "label": "negative",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-015",
+      "input": "Thanks for nothing.",
+      "label": "negative",
+      "split": "test",
+      "tags": [
+        "sarcasm"
+      ]
+    },
+    {
+      "id": "sentiment-016",
+      "input": "The meeting is moved to Tuesday at 4pm.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-017",
+      "input": "Hands down the best coffee in town.",
+      "label": "positive",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-018",
+      "input": "Does this model come in blue?",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-019",
+      "input": "I ordered the medium size.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-020",
+      "input": "The app has a dark mode option in settings.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-021",
+      "input": "Our office is on the third floor.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-022",
+      "input": "The train to Vijayawada leaves at 6:15.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-023",
+      "input": "Please send the invoice to accounts@example.com.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-024",
+      "input": "The report covers sales from January to March.",
+      "label": "neutral",
+      "split": "test",
+      "tags": []
+    },
+    {
+      "id": "sentiment-cal-001",
+      "input": "Not bad at all, I'd recommend it.",
+      "label": "positive",
+      "split": "calibration",
+      "tags": [
+        "negation"
+      ]
+    },
+    {
+      "id": "sentiment-cal-002",
+      "input": "Perfect, the app crashed right before I saved my work.",
+      "label": "negative",
+      "split": "calibration",
+      "tags": [
+        "sarcasm"
+      ]
+    },
+    {
+      "id": "sentiment-cal-003",
+      "input": "The update changed the menu layout.",
+      "label": "neutral",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "sentiment-cal-004",
+      "input": "Five stars, the staff were so kind.",
+      "label": "positive",
+      "split": "calibration",
+      "tags": []
+    },
+    {
+      "id": "sentiment-cal-005",
+      "input": "It works, I guess, but it's slow and confusing.",
+      "label": "negative",
+      "split": "calibration",
+      "tags": [
+        "mixed"
+      ]
+    },
+    {
+      "id": "sentiment-cal-006",
+      "input": "The warranty lasts two years.",
+      "label": "neutral",
+      "split": "calibration",
+      "tags": []
+    }
+  ]
+}

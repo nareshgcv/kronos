@@ -1,0 +1,12 @@
+{"confidence":0.9393379092216492,"correct":true,"error":null,"gold":"Yes","id":"sanity-001","latency_us":841440,"predicted":"Yes","tags":[]}
+{"confidence":0.8985406756401062,"correct":false,"error":null,"gold":"No","id":"sanity-002","latency_us":830374,"predicted":"Yes","tags":[]}
+{"confidence":0.9588274359703064,"correct":true,"error":null,"gold":"Yes","id":"sanity-003","latency_us":842582,"predicted":"Yes","tags":[]}
+{"confidence":0.9037102460861206,"correct":false,"error":null,"gold":"No","id":"sanity-004","latency_us":868365,"predicted":"Yes","tags":[]}
+{"confidence":0.9701992869377136,"correct":true,"error":null,"gold":"Yes","id":"sanity-005","latency_us":874526,"predicted":"Yes","tags":[]}
+{"confidence":0.9476543068885803,"correct":false,"error":null,"gold":"No","id":"sanity-006","latency_us":874550,"predicted":"Yes","tags":[]}
+{"confidence":0.9737345576286316,"correct":true,"error":null,"gold":"Yes","id":"sanity-007","latency_us":907249,"predicted":"Yes","tags":[]}
+{"confidence":0.8927078247070312,"correct":false,"error":null,"gold":"No","id":"sanity-008","latency_us":822449,"predicted":"Yes","tags":[]}
+{"confidence":0.9569084048271179,"correct":true,"error":null,"gold":"Yes","id":"sanity-009","latency_us":849077,"predicted":"Yes","tags":[]}
+{"confidence":0.9059596061706543,"correct":false,"error":null,"gold":"No","id":"sanity-010","latency_us":813176,"predicted":"Yes","tags":[]}
+{"confidence":0.944451093673706,"correct":true,"error":null,"gold":"Yes","id":"sanity-011","latency_us":799420,"predicted":"Yes","tags":[]}
+{"confidence":0.8834999203681946,"correct":false,"error":null,"gold":"No","id":"sanity-012","latency_us":779899,"predicted":"Yes","tags":[]}
