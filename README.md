@@ -338,7 +338,7 @@ GPUs without proper BF16 support (for example NVIDIA T4 or GTX 16-series) need `
 
 ### Accuracy (Qwen3-4B, zero-shot, no training)
 
-Setup: Qwen3-4B, F16, NVIDIA T4 (Google Colab), Candle 0.9.2. Datasets are in `eval/datasets/` and are small (18–32 test cases each), so one mistake moves a score by 3–6 points. Laya was run zero-shot with the same labels and definitions.
+Setup: Qwen3-4B, F16, NVIDIA T4 (Google Colab), Candle 0.11. Datasets are in `eval/datasets/` and are small (18–32 test cases each), so one mistake moves a score by 3–6 points. Laya was run zero-shot with the same labels and definitions.
 
 | Dataset | Kronos, labels + definitions | Kronos, + examples (few-shot) | Laya (zero-shot) | Kronos + Qwen3-0.6B |
 |---|---|---|---|---|
@@ -665,13 +665,7 @@ along with the hardware and workload used to produce the measurements.
 ---
 
 # 📈 Benchmarking
-
-A basic latency benchmark can be run using:
-
-
-```text
- need to update
-```
+------
 For production benchmarking, measure the pipeline separately:
 
 ```text
