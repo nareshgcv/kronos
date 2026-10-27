@@ -305,7 +305,121 @@ For local sidecar deployments, Kronos provides a Unix Domain Socket interface us
 This allows applications written in other languages to communicate with a local Kronos process without requiring a remote service.
 
 ---
+## 📊 Status and verified results
 
+Kronos is an early-stage project. Everything below was measured, and the setup for each number is stated next to it. Example values elsewhere in this README are illustrative.
+
+### Verified correctness
+
+Kronos's output was checked against two independent implementations of the same model and prompt:
+
+* **Hugging Face Transformers (PyTorch):** Kronos's Yes/No logits matched the official implementation to two decimal places, and Kronos's Qwen3 prompt was byte-identical to the model's official chat template (non-thinking mode).
+* **vLLM:** on every evaluation dataset, Kronos and vLLM produced identical accuracy with the same model and prompts.
+
+Kronos does not change what a model decides. It changes how the decision is run and delivered.
+
+### Choosing a model
+
+| Model | Decision quality | Suggested use |
+|---|---|---|
+| Qwen3-0.6B | Collapses to one answer on most tasks (about 50% on two-way and four-way decisions) | Development and smoke tests only |
+| Qwen3-4B | 94–98% on the evaluation datasets (below) | Recommended starting point |
+
+Use a non-thinking (instruct) model, or a hybrid model in non-thinking mode. Kronos reads the answer from the first output position, so a model that starts by "thinking" is the wrong fit.
+
+### Hardware
+
+| Model | GPU memory (F16/BF16) | RAM on CPU (F32) |
+|---|---|---|
+| Qwen3-0.6B | 4 GB | 8 GB (tight), 16 GB comfortable |
+| Qwen3-4B | 12 GB or more (measured: 8.0 GB in use) | 32 GB |
+
+GPUs without proper BF16 support (for example NVIDIA T4 or GTX 16-series) need `KRONOS_DTYPE=f16`.
+
+### Accuracy (Qwen3-4B, zero-shot, no training)
+
+Setup: Qwen3-4B, F16, NVIDIA T4 (Google Colab), Candle 0.9.2. Datasets are in `eval/datasets/` and are small (18–32 test cases each), so one mistake moves a score by 3–6 points. Laya was run zero-shot with the same labels and definitions.
+
+| Dataset | Kronos, labels + definitions | Kronos, + examples (few-shot) | Laya (zero-shot) | Kronos + Qwen3-0.6B |
+|---|---|---|---|---|
+| Customer support routing | 100% | 100% | 96.9% | 50.0% |
+| Tool selection | 100% | 100% | 87.5% | 50.0% |
+| Sentiment | 95.8% | 95.8% | 95.8% | — |
+| Agent gating (allow/block) | 95.8% | 95.8% | 62.5% | — |
+| Guardrail (yes/no) | 95.8% | 95.8% | 70.8% | 50.0% |
+| Trade risk | 66.7% | 100% | 66.7% | — |
+| Sanity check | 100% | — | 83.3% | 50.0% |
+| **Overall** | **149/158 (94.3%)** | **143/146 (97.9%)** | **129/158 (81.6%)** | |
+
+Choice-order sensitivity was low: reversing the order of the allowed answers changed 0–8% of decisions per dataset.
+
+Laya's own documentation describes it as a base to fine-tune rather than a zero-shot engine; a fine-tuned Laya would likely close much of this gap.
+
+### Speed and footprint (Qwen3-4B on an NVIDIA T4)
+
+| | Kronos | vLLM | Laya |
+|---|---|---|---|
+| Latency p50 / p99, one request at a time | 97 / 107 ms | 87 / 96 ms | 40 / 61 ms |
+| Throughput, one request at a time | 11 / s | 12 / s | 24 / s |
+| Throughput, batched | not supported | 19 / s | — |
+| GPU memory | 8.0 GB in use | 12.3 GB reserved | 2.4 GB peak |
+| Startup to first decision | 34 s | 121 s | — |
+| Software size | 17 MB binary | 3.1 GB Python stack (9.8 GB with NVIDIA libraries) | Python stack |
+| Process RAM | 0.45 GB | 1.6 GB or more | — |
+
+Notes:
+
+* vLLM's memory figure is a reservation (`gpu_memory_utilization=0.85`), not its minimum; its startup includes optimisations that make later requests faster.
+* Kronos's GPU build still needs NVIDIA's CUDA libraries on the machine. On CPU, the binary is all it needs.
+* Laya is a 421M-parameter model, about a tenth the size of Qwen3-4B; its speed and memory reflect that.
+* On a laptop CPU (8 GB RAM), Qwen3-0.6B at F32 takes about 1–1.5 s per decision.
+
+### When to use Kronos
+
+Kronos fits when you need:
+
+* **Custom decisions without training data:** any labels you define, at request time.
+* **No Python in the deployment:** a single Rust binary, an embedded library call, an HTTP endpoint or a Unix socket.
+* **A light footprint:** fast startup, low RAM, small install.
+* **A bounded output:** the answer is always one of your labels, never free text.
+
+Consider alternatives when you need:
+
+* **Maximum throughput under heavy load:** vLLM batches requests; Kronos runs one decision at a time per instance.
+* **The lowest latency or memory:** a small, fine-tuned decision model such as Laya.
+
+### Known limitations
+
+* **Single-token labels only.** Each label must be one token for the model's tokenizer. Lowercase common words usually work; many capitalised or multi-word labels do not.
+* **One decision at a time.** Inference is serialized per model instance; there is no batching yet.
+* **No quantization yet.** Models run at full or half precision.
+* **Confidence is relative to the allowed labels,** not a calibrated probability of being right.
+* **Weak at arithmetic and multi-step reasoning.** Compute limits and comparisons in code and pass the result in (see `trade_risk.json`).
+
+### Security use
+
+On the security datasets, both of Qwen3-4B's mistakes went in the dangerous direction and were near-certain:
+
+* An agent action sending one customer's order history to another customer was **allowed** (confidence 0.965).
+* A request to write fake reviews was judged **not harmful** (confidence 1.000), even after the label definition explicitly listed fraud and deception.
+
+Because the confidence was so high, no threshold would have caught either one. Use Kronos as **one layer** of a safety design, together with hard rules, logging and human review for sensitive actions, never as the only gate.
+
+### Reproducing the results
+
+```bash
+# Accuracy
+cargo run --release --bin kronos-eval -- \
+    --model ./models/Qwen3-4B \
+    --dataset eval/datasets/customer_support_routing.json \
+    --style defined --order-check
+
+# Speed (cycles through every prompt in eval/datasets/)
+KRONOS_MODEL_DIR=./models/Qwen3-4B KRONOS_BENCH_ITERS=2000 cargo bench --bench latency
+```
+
+Add `--features cuda` (and `KRONOS_DTYPE=f16` on a T4) for GPU runs. See `eval/README.md` for all options and the dataset format.
+____
 # 🏗️ Architecture
 
 ```mermaid
