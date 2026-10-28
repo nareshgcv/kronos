@@ -53,6 +53,9 @@ pub struct KronosConfig {
     pub max_choices: usize,
     /// Max HTTP body / IPC line size in bytes.
     pub max_request_bytes: usize,
+    /// `None` = F32 on CPU, BF16 on GPU. Override with KRONOS_DTYPE=f32|f16|bf16
+    /// (use f16 on GPUs without BF16 support).
+    pub dtype: Option<DType>,
 }
 
 impl Default for KronosConfig {
@@ -69,6 +72,7 @@ impl Default for KronosConfig {
             max_prompt_tokens: 4096,
             max_choices: 64,
             max_request_bytes: 64 * 1024,
+            dtype: None,
         }
     }
 }
@@ -88,6 +92,7 @@ impl KronosConfig {
         if let Some(v) = env_var::<usize>("KRONOS_MAX_PROMPT_TOKENS")? { c.max_prompt_tokens = v; }
         if let Some(v) = env_var::<usize>("KRONOS_MAX_CHOICES")? { c.max_choices = v; }
         if let Some(v) = env_var::<usize>("KRONOS_MAX_REQUEST_BYTES")? { c.max_request_bytes = v; }
+        if let Some(v) = env_var::<String>("KRONOS_DTYPE")? { c.dtype = Some(parse_dtype(&v)?); }
         Ok(c)
     }
 
@@ -108,6 +113,11 @@ impl KronosConfig {
             bail!("max_request_bytes must be at least 1024");
         }
         Ok(())
+    }
+
+    /// The configured dtype if set (KRONOS_DTYPE), otherwise the device default.
+    pub fn resolve_dtype(&self, device: &Device) -> DType {
+        self.dtype.unwrap_or_else(|| dtype_for_device(device))
     }
 }
 
@@ -135,6 +145,15 @@ pub fn dtype_for_device(device: &Device) -> DType {
     }
 }
 
+fn parse_dtype(s: &str) -> Result<DType> {
+    match s.to_ascii_lowercase().as_str() {
+        "f32" => Ok(DType::F32),
+        "f16" => Ok(DType::F16),
+        "bf16" => Ok(DType::BF16),
+        other => bail!("KRONOS_DTYPE: unknown dtype '{other}' (f32 | f16 | bf16)"),
+    }
+}
+
 fn env_var<T>(key: &str) -> Result<Option<T>>
 where
     T: FromStr,
@@ -159,5 +178,4 @@ fn env_bool(key: &str) -> Result<Option<bool>> {
             _ => bail!("{key}={v:?}: expected true/false"),
         },
     }
-             
 }
