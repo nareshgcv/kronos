@@ -1,7 +1,7 @@
 use anyhow::Result;
 use kronos::server::http::{create_router, AppState};
 use kronos::{EmbeddedKronos, KronosConfig};
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -34,7 +34,9 @@ async fn main() -> Result<()> {
             );
             tokio::spawn(async move {
                 if let Err(e) = ipc.run().await {
-                    error!("IPC server stopped: {e:#}");
+                    // Full path: `error` is only used on unix, so importing it
+                    // at the top causes an unused-import warning on Windows.
+                    tracing::error!("IPC server stopped: {e:#}");
                 }
             });
         }
